@@ -1,6 +1,5 @@
 {
   "name": "domainak",
-  "module": "index.ts",
   "type": "module",
   "private": true,
   "devDependencies": {
@@ -8,5 +7,9 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@types/node": "^25.4.0",
+    "hono": "^4.12.7"
   }
 }

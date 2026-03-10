@@ -5,6 +5,8 @@ services:
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - openresty
     networks:
       - proxy-net
 
@@ -15,7 +17,7 @@ services:
     environment:
       - DOMAINS=${DOMAINS}
     volumes:
-      - ./openresty-conf/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
     depends_on:
       - redis
     networks:
@@ -23,9 +25,14 @@ services:
 
   redis:
     image: redis:alpine
+    volumes:
+      - redis_data:/data
     networks:
       - proxy-net
 
 networks:
   proxy-net:
     driver: bridge
+
+volumes:
+  redis_data:
