@@ -1,0 +1,31 @@
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    networks:
+      - proxy-net
+
+  openresty:
+    image: openresty/openresty:alpine
+    ports:
+      - "2006:80"
+    environment:
+      - DOMAINS=${DOMAINS}
+    volumes:
+      - ./openresty-conf/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+    depends_on:
+      - redis
+    networks:
+      - proxy-net
+
+  redis:
+    image: redis:alpine
+    networks:
+      - proxy-net
+
+networks:
+  proxy-net:
+    driver: bridge
