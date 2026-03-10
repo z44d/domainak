@@ -8,7 +8,7 @@ services:
     depends_on:
       - openresty
     networks:
-      - proxy-net
+      - domainak-net
 
   openresty:
     image: openresty/openresty:alpine
@@ -21,17 +21,17 @@ services:
     depends_on:
       - redis
     networks:
-      - proxy-net
+      - domainak-net
 
   redis:
     image: redis:alpine
     volumes:
       - redis_data:/data
     networks:
-      - proxy-net
+      - domainak-net
 
 networks:
-  proxy-net:
+  domainak-net:
     driver: bridge
 
 volumes:
