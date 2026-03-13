@@ -5,8 +5,6 @@ services:
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
-    depends_on:
-      - openresty
     networks:
       - domainak-net
 
@@ -27,6 +25,11 @@ services:
     image: redis:alpine
     volumes:
       - redis_data:/data
+    networks:
+      - domainak-net
+
+  test-app:
+    image: nginxdemos/hello
     networks:
       - domainak-net
 
