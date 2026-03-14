@@ -102,6 +102,9 @@ app.get("/", (c) => {
   return c.json({ message: "GitHub OAuth Backend is running" });
 });
 
-export default app;
+export default {
+  port: 3000,
+  fetch: app.fetch,
+};
 
 console.log(`Server running on http://localhost:3000`);

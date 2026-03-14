@@ -48,3 +48,4 @@ networks:
 
 volumes:
   redis_data:
+  pgdata:
