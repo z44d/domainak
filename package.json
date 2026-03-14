@@ -8,7 +8,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "server": "bun run --index server/auth.ts"
+    "server": "bun run --watch server/index.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.8",

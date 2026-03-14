@@ -1,0 +1,33 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import * as config from "./config";
+import { authRouter } from "./routes/auth";
+import { domainsRouter } from "./routes/domains";
+import { adminRouter } from "./routes/admin";
+import { statsRouter } from "./routes/stats";
+
+const app = new Hono();
+
+app.use(
+  "*",
+  cors({
+    origin: config.FRONTEND_URL,
+    credentials: true,
+  }),
+);
+
+app.route("/api/auth", authRouter);
+app.route("/api/domains", domainsRouter);
+app.route("/api/admin", adminRouter);
+app.route("/api/stats", statsRouter);
+
+app.get("/", (c) => {
+  return c.json({ message: "Domainak API is running" });
+});
+
+export default {
+  port: process.env.PORT || 3000,
+  fetch: app.fetch,
+};
+
+console.log(`Server running on http://localhost:${process.env.PORT || 3000}`);
