@@ -5,6 +5,10 @@ services:
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN}
     command: tunnel run
+    depends_on:
+      - openresty
+    networks:
+      - domainak-net
 
   openresty:
     image: openresty/openresty:alpine
