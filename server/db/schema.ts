@@ -13,7 +13,6 @@ export const userTable = pgTable("user", {
   githubId: integer("github_id").notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   email: varchar("email").notNull().unique(),
-  avatarUrl: varchar("avatar_url", { length: 255 }),
   isBanned: boolean("is_banned").default(false).notNull(),
 });
 

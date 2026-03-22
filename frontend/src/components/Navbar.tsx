@@ -35,7 +35,7 @@ export function Navbar({ user }: { user: any }) {
             <div className="flex items-center gap-4 pl-6 border-l border-slate-800">
               <div className="flex items-center gap-2">
                 <img
-                  src={user.avatarUrl}
+                  src={`https://avatars.githubusercontent.com/u/${user.githubId}?v=4`}
                   alt={user.name}
                   className="w-8 h-8 rounded-full border border-slate-700"
                 />
