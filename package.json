@@ -21,10 +21,12 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@types/ioredis": "^5.0.0",
     "@types/node": "^25.4.0",
     "axios": "^1.13.6",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.7",
+    "ioredis": "^5.10.1",
     "postgres": "^3.4.8"
   }
 }

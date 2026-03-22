@@ -25,8 +25,39 @@ services:
 
   redis:
     image: redis:alpine
+    ports:
+      - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - domainak-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - POSTGRES_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - FRONTEND_URL=${FRONTEND_URL:-http://frontend:5173}
+      - DOMAINS=${DOMAINS:-domainak.com}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - db
+      - redis
+    networks:
+      - domainak-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:3000/api}
     networks:
       - domainak-net
 

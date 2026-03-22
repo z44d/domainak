@@ -14,8 +14,13 @@ const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = config;
 
 authRouter.get("/github", (c) => {
   const redirectUri = `${config.BACKEND_URL}/api/auth/callback`;
-  const githubAuthUrl = new URL("https://github.com/login/oauth/authorize");
-  githubAuthUrl.searchParams.append("client_id", GITHUB_CLIENT_ID as string);
+  const githubAuthUrl = new URL(
+    "https://github.com/login/oauth/authorize",
+  );
+  githubAuthUrl.searchParams.append(
+    "client_id",
+    GITHUB_CLIENT_ID as string,
+  );
   githubAuthUrl.searchParams.append("redirect_uri", redirectUri);
   githubAuthUrl.searchParams.append("scope", "user:email");
 
@@ -42,7 +47,7 @@ authRouter.get("/callback", async (c) => {
         client_secret: GITHUB_CLIENT_SECRET,
         code,
       },
-      { headers: { Accept: "application/json" } }
+      { headers: { Accept: "application/json" } },
     );
 
     const accessToken = tokenResponse.data.access_token;
@@ -57,35 +62,53 @@ authRouter.get("/callback", async (c) => {
     const userData = {
       githubId: userResponse.data.id,
       name: userResponse.data.name || userResponse.data.login,
-      email: userResponse.data.email || `${userResponse.data.login}@users.noreply.github.com`,
+      email:
+        userResponse.data.email ||
+        `${userResponse.data.login}@users.noreply.github.com`,
       avatarUrl: userResponse.data.avatar_url,
     };
 
-    let user;
-    const existingUsers = await db.select().from(userTable).where(eq(userTable.githubId, userData.githubId));
+    let user: any;
+    const existingUsers = await db
+      .select()
+      .from(userTable)
+      .where(eq(userTable.githubId, userData.githubId));
 
     if (existingUsers.length === 0) {
-      const inserted = await db.insert(userTable).values({
-        githubId: userData.githubId,
-        name: userData.name,
-        email: userData.email,
-        avatarUrl: userData.avatarUrl,
-        isBanned: false,
-      }).returning();
+      const inserted = await db
+        .insert(userTable)
+        .values({
+          githubId: userData.githubId,
+          name: userData.name,
+          email: userData.email,
+          avatarUrl: userData.avatarUrl,
+          isBanned: false,
+        })
+        .returning();
+      // biome-ignore lint/style/noNonNullAssertion: Guaranteed array index
       user = inserted[0]!;
     } else {
+      // biome-ignore lint/style/noNonNullAssertion: Guaranteed array index
       user = existingUsers[0]!;
       if (user.isBanned) {
-         return c.redirect(`${config.FRONTEND_URL}?error=banned`);
+        return c.redirect(`${config.FRONTEND_URL}?error=banned`);
       }
-      const updated = await db.update(userTable)
-        .set({ name: userData.name, email: userData.email, avatarUrl: userData.avatarUrl })
+      const updated = await db
+        .update(userTable)
+        .set({
+          name: userData.name,
+          email: userData.email,
+          avatarUrl: userData.avatarUrl,
+        })
         .where(eq(userTable.id, user.id))
         .returning();
+      // biome-ignore lint/style/noNonNullAssertion: Guaranteed array index
       user = updated[0]!;
     }
 
-    const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
+    const adminIds = process.env.ADMIN_IDS
+      ? process.env.ADMIN_IDS.split(",")
+      : [];
     const isAdmin = adminIds.includes(String(user.githubId));
 
     const secret = process.env.JWT_SECRET || "super-secret";
@@ -121,16 +144,19 @@ authRouter.post("/logout", (c) => {
 
 authRouter.get("/me", jwtMiddleware, async (c) => {
   const userPayload = c.get("user");
-  const dbUser = await db.select().from(userTable).where(eq(userTable.id, userPayload.id));
+  const dbUser = await db
+    .select()
+    .from(userTable)
+    .where(eq(userTable.id, userPayload.id));
   if (dbUser.length === 0) return c.json({ error: "User not found" }, 404);
 
   return c.json({
-    id: dbUser[0]!.id,
-    githubId: dbUser[0]!.githubId,
-    name: dbUser[0]!.name,
-    email: dbUser[0]!.email,
-    avatarUrl: dbUser[0]!.avatarUrl,
+    id: dbUser[0]?.id,
+    githubId: dbUser[0]?.githubId,
+    name: dbUser[0]?.name,
+    email: dbUser[0]?.email,
+    avatarUrl: dbUser[0]?.avatarUrl,
     isAdmin: userPayload.isAdmin,
-    isBanned: dbUser[0]!.isBanned,
+    isBanned: dbUser[0]?.isBanned,
   });
 });
