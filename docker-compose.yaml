@@ -44,6 +44,7 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://frontend:5173}
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
+      - NODE_ENV=production
     depends_on:
       - db
       - redis

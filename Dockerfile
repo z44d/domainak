@@ -7,8 +7,5 @@ RUN bun install --frozen-lockfile
 
 COPY server/ .
 
-# Generate Drizzle schema
-RUN bun run db:generate
-
 EXPOSE 3000
 CMD ["bun", "run", "--hot", "server/index.ts"]
