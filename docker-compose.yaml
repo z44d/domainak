@@ -39,7 +39,6 @@ services:
     environment:
       - POSTGRES_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379
-      - FRONTEND_URL=${FRONTEND_URL:-http://frontend:5173}
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
       - NODE_ENV=production
@@ -56,7 +55,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://backend:3000/api}
+      - NEXT_PUBLIC_API_URL=${BACKEND_URL:-http://backend:3000/api}
     depends_on:
       - backend
     networks:

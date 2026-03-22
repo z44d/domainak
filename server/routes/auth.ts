@@ -13,7 +13,8 @@ export const authRouter = new Hono<{ Variables: { user: any } }>();
 const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = config;
 
 authRouter.get("/github", (c) => {
-  const redirectUri = `${config.BACKEND_URL}/api/auth/callback`;
+  const url = new URL(c.req.url);
+  const redirectUri = `${url.origin}/api/auth/callback`;
   const githubAuthUrl = new URL(
     "https://github.com/login/oauth/authorize",
   );
