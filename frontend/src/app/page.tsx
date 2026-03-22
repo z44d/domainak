@@ -4,7 +4,7 @@ import { Github, Globe } from "lucide-react";
 
 export default function LandingPage() {
   const handleLogin = () => {
-    window.location.href = `${process.env.BACKEND_URL}/api/auth/github`;
+    window.location.href = "/api/auth/github";
   };
 
   return (
