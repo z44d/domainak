@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
+import { redis } from "server/db/redis";
 import { db } from "../db";
 import { bannedIpsTable, domainTable } from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
-import { redis } from "server/db/redis";
 
 export const domainsRouter = new Hono<{ Variables: { user: any } }>();
 domainsRouter.use("*", jwtMiddleware);
@@ -93,6 +93,6 @@ domainsRouter.delete("/:id", async (c) => {
     return c.json({ error: "Forbidden" }, 403);
 
   await db.delete(domainTable).where(eq(domainTable.id, id));
-  await redis.del(domain[0]!.subdomain);
+  await redis.del(domain[0]?.subdomain);
   return c.json({ success: true });
 });

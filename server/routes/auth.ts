@@ -1,7 +1,6 @@
 import axios from "axios";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { deleteCookie, setCookie } from "hono/cookie";
 import { sign } from "hono/jwt";
 import * as config from "../config";
 import { db } from "../db";
