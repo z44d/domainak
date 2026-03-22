@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 
 export function Navbar({ user }: { user: any }) {
   const handleLogout = async () => {
+    localStorage.removeItem("session_token");
     await api.post("/auth/logout");
     window.location.href = "/";
   };
@@ -33,7 +34,6 @@ export function Navbar({ user }: { user: any }) {
 
             <div className="flex items-center gap-4 pl-6 border-l border-slate-800">
               <div className="flex items-center gap-2">
-                // biome-ignore lint/performance/noImgElement: Github avatars
                 <img
                   src={user.avatarUrl}
                   alt={user.name}

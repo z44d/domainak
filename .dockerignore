@@ -5,3 +5,4 @@ node_modules/
 .gitignore
 biome.json
 README.md
+frontend/

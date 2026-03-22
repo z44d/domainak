@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { db } from "../db";
 import { bannedIpsTable, domainTable, userTable } from "../db/schema";
 import { adminMiddleware, jwtMiddleware } from "../middleware/auth";
+import { redis } from "../db/redis";
 
 export const adminRouter = new Hono<{ Variables: { user: any } }>();
 
@@ -35,7 +36,14 @@ adminRouter.get("/domains", async (c) => {
 // Delete a domain
 adminRouter.delete("/domains/:id", async (c) => {
   const id = parseInt(c.req.param("id"), 10);
+  const domain = await db
+    .select()
+    .from(domainTable)
+    .where(eq(domainTable.id, id));
+  if (domain.length === 0)
+    return c.json({ error: "Domain not found" }, 404);
   await db.delete(domainTable).where(eq(domainTable.id, id));
+  await redis.del(domain[0]!.subdomain);
   return c.json({ success: true });
 });
 

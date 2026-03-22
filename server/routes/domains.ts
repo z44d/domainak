@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { db } from "../db";
 import { bannedIpsTable, domainTable } from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
+import { redis } from "server/db/redis";
 
 export const domainsRouter = new Hono<{ Variables: { user: any } }>();
 domainsRouter.use("*", jwtMiddleware);
@@ -53,7 +54,12 @@ domainsRouter.post("/", async (c) => {
     return c.json({ error: "IP Address is banned" }, 403);
   }
 
+  if (await redis.exists(fullSubdomain)) {
+    return c.json({ error: "Subdomain already taken" }, 400);
+  }
+
   try {
+    await redis.set(fullSubdomain, `${hostname}:${port}`);
     const inserted = await db
       .insert(domainTable)
       .values({
@@ -66,10 +72,6 @@ domainsRouter.post("/", async (c) => {
 
     return c.json({ domain: inserted[0] });
   } catch (error: any) {
-    if (error.code === "23505") {
-      // Postgres unique constraint
-      return c.json({ error: "Subdomain already taken" }, 400);
-    }
     console.error(error);
     return c.json({ error: "Failed to register subdomain" }, 500);
   }
@@ -84,11 +86,13 @@ domainsRouter.delete("/:id", async (c) => {
     .select()
     .from(domainTable)
     .where(eq(domainTable.id, id));
+
   if (domain.length === 0)
     return c.json({ error: "Domain not found" }, 404);
   if (domain[0]?.userId !== user.id)
     return c.json({ error: "Forbidden" }, 403);
 
   await db.delete(domainTable).where(eq(domainTable.id, id));
+  await redis.del(domain[0]!.subdomain);
   return c.json({ success: true });
 });

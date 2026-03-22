@@ -14,7 +14,7 @@ const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = config;
 
 authRouter.get("/github", (c) => {
   const url = new URL(c.req.url);
-  const redirectUri = `${url.origin}/api/auth/callback`;
+  const redirectUri = `${url.origin}/auth/callback`;
   const githubAuthUrl = new URL(
     "https://github.com/login/oauth/authorize",
   );
@@ -25,7 +25,7 @@ authRouter.get("/github", (c) => {
   githubAuthUrl.searchParams.append("redirect_uri", redirectUri);
   githubAuthUrl.searchParams.append("scope", "user:email");
 
-  return c.json({ url: githubAuthUrl.toString() });
+  return c.redirect(githubAuthUrl.toString());
 });
 
 authRouter.get("/callback", async (c) => {
@@ -121,15 +121,7 @@ authRouter.get("/callback", async (c) => {
     };
     const token = await sign(payload, secret);
 
-    setCookie(c, "session_token", token, {
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      sameSite: "Lax",
-      maxAge: 60 * 60 * 24 * 7,
-    });
-
-    return c.redirect(`${config.FRONTEND_URL}/dashboard`);
+    return c.redirect(`${config.FRONTEND_URL}/callback?token=${token}`);
   } catch (error) {
     console.error("Auth error:", error);
     return c.redirect(`${config.FRONTEND_URL}?error=auth_failed`);
@@ -137,9 +129,6 @@ authRouter.get("/callback", async (c) => {
 });
 
 authRouter.post("/logout", (c) => {
-  deleteCookie(c, "session_token", {
-    path: "/",
-  });
   return c.json({ success: true });
 });
 

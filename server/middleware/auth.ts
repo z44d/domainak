@@ -3,7 +3,11 @@ import { getCookie } from "hono/cookie";
 import { verify } from "hono/jwt";
 
 export const jwtMiddleware = async (c: Context, next: Next) => {
-  const token = getCookie(c, "session_token");
+  const authHeader = c.req.header("Authorization");
+  const token = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : getCookie(c, "session_token");
+
   if (!token) {
     return c.json({ error: "Unauthorized" }, 401);
   }

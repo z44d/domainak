@@ -20,6 +20,7 @@ services:
       - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
     depends_on:
       - redis
+      - backend
     networks:
       - domainak-net
 
@@ -35,16 +36,20 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "2007:3000"
+      - "2007:2007"
     environment:
-      - POSTGRES_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
       - NODE_ENV=production
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - domainak-net
 
@@ -52,6 +57,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${BACKEND_URL:-http://localhost:2007/api}
     ports:
       - "5173:5173"
     environment:
@@ -74,6 +81,11 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_DB=${POSTGRES_DB}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 networks:
   domainak-net:

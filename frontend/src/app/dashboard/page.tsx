@@ -57,6 +57,7 @@ export default function Dashboard() {
         }));
       }
     } catch (_error) {
+      localStorage.removeItem("session_token");
       window.location.href = "/";
     } finally {
       setIsLoading(false);

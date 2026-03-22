@@ -16,20 +16,20 @@ app.use(
   }),
 );
 
-app.route("/api/auth", authRouter);
-app.route("/api/domains", domainsRouter);
-app.route("/api/admin", adminRouter);
-app.route("/api/stats", statsRouter);
+app.route("/auth", authRouter);
+app.route("/domains", domainsRouter);
+app.route("/admin", adminRouter);
+app.route("/stats", statsRouter);
 
 app.get("/", (c) => {
   return c.json({ message: "Domainak API is running" });
 });
 
 export default {
-  port: process.env.PORT || 3000,
+  port: process.env.PORT || 2007,
   fetch: app.fetch,
 };
 
 console.log(
-  `Server running on http://localhost:${process.env.PORT || 3000}`,
+  `Server running on http://localhost:${process.env.PORT || 2007}`,
 );
