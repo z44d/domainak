@@ -41,9 +41,7 @@
         "banned_ips_ip_unique": {
           "name": "banned_ips_ip_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "ip"
-          ]
+          "columns": ["ip"]
         }
       },
       "policies": {},
@@ -74,12 +72,8 @@
           "name": "domain_static_domain_id_domain_id_fk",
           "tableFrom": "domain_static",
           "tableTo": "domain",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["domain_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -138,12 +132,8 @@
           "name": "domain_user_id_user_id_fk",
           "tableFrom": "domain",
           "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -153,9 +143,7 @@
         "domain_subdomain_unique": {
           "name": "domain_subdomain_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "subdomain"
-          ]
+          "columns": ["subdomain"]
         }
       },
       "policies": {},
@@ -198,12 +186,8 @@
           "name": "domain_visits_domain_id_domain_id_fk",
           "tableFrom": "domain_visits",
           "tableTo": "domain",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["domain_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -257,16 +241,12 @@
         "user_github_id_unique": {
           "name": "user_github_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "github_id"
-          ]
+          "columns": ["github_id"]
         },
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         }
       },
       "policies": {},

@@ -4,7 +4,6 @@ import { db } from "../db";
 import { redis } from "../db/redis";
 import { domainTable } from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
-import { INTERNAL_SECRET } from "server/config";
 
 export const statsRouter = new Hono<{ Variables: { user: any } }>();
 
@@ -20,64 +19,6 @@ function getISOWeek(date: Date) {
     ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
   );
 }
-
-// Internal endpoint called by Nginx safely
-statsRouter.all("/increment", async (c) => {
-  const secret = c.req.header("X-Internal-Secret");
-  if (secret !== INTERNAL_SECRET) {
-    return c.json({ error: "Forbidden" }, 403);
-  }
-
-  const host = c.req.header("Host");
-  if (!host) {
-    return c.json({ error: "Missing Host header" }, 400);
-  }
-
-  const now = new Date();
-  const year = now.getFullYear().toString();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const week = String(getISOWeek(now)).padStart(2, "0");
-
-  const totalKey = `${host}:total`;
-  const yearlyKey = `${host}:${year}`;
-  const monthlyKey = `${host}:${year}-${month}`;
-  const weeklyKey = `${host}:${year}-W${week}`;
-  const dailyKey = `${host}:${year}-${month}-${day}`;
-
-  const pipeline = redis.pipeline();
-  pipeline.incr(totalKey);
-  pipeline.incr(yearlyKey);
-  pipeline.incr(monthlyKey);
-  pipeline.incr(weeklyKey);
-  pipeline.incr(dailyKey);
-
-  await pipeline.exec();
-
-  // Handle expirations for Daily and Weekly keys (if not set)
-  // End of current day
-  const endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  // End of current week (assuming Sunday is end of week)
-  const currentDayOfWeek = now.getDay() || 7; // 1-7 (Mon-Sun)
-  const daysUntilSunday = 7 - currentDayOfWeek;
-  const endOfWeek = new Date(now);
-  endOfWeek.setDate(now.getDate() + daysUntilSunday);
-  endOfWeek.setHours(23, 59, 59, 999);
-
-  // Set TTLs if the key is newly created or just update to make sure it drops
-  // To avoid resetting TTL on every request, we can use set with EX & NX?
-  // But INCR followed by EXPIRE works, though EXPIRE resets TTL.
-  // GT/NX options for EXPIRE exist in Redis 7 (e.g. redis.expire(key, seconds, 'NX'))
-  // ioredis supports expire with options in newer versions, or we can just ignore resetting and use a simple script.
-  // Actually, wait: we can just use `expireat` with the exact timestamp!
-  // It won't hurt to update it to the exact same sunset time.
-  redis.expireat(dailyKey, Math.floor(endOfDay.getTime() / 1000));
-  redis.expireat(weeklyKey, Math.floor(endOfWeek.getTime() / 1000));
-
-  return c.text("ok");
-});
 
 statsRouter.use("*", jwtMiddleware);
 
