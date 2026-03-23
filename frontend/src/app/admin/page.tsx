@@ -30,9 +30,11 @@ export default function AdminDashboard() {
 
       const res = await api.get("/admin/domains");
       setDomains(res.data.domains);
-    } catch (_error) {
-      localStorage.removeItem("session_token");
-      window.location.href = "/";
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        localStorage.removeItem("session_token");
+        window.location.href = "/";
+      }
     } finally {
       setIsLoading(false);
     }

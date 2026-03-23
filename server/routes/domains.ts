@@ -93,6 +93,7 @@ domainsRouter.delete("/:id", async (c) => {
     return c.json({ error: "Forbidden" }, 403);
 
   await db.delete(domainTable).where(eq(domainTable.id, id));
-  await redis.del(domain[0]?.subdomain);
+  const subdomain = domain[0]?.subdomain;
+  if (subdomain) await redis.del(subdomain);
   return c.json({ success: true });
 });

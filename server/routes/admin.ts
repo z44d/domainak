@@ -43,7 +43,8 @@ adminRouter.delete("/domains/:id", async (c) => {
   if (domain.length === 0)
     return c.json({ error: "Domain not found" }, 404);
   await db.delete(domainTable).where(eq(domainTable.id, id));
-  await redis.del(domain[0]?.subdomain);
+  const subdomain = domain[0]?.subdomain;
+  if (subdomain) await redis.del(subdomain);
   return c.json({ success: true });
 });
 

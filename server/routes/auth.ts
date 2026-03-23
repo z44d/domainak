@@ -81,7 +81,6 @@ authRouter.get("/callback", async (c) => {
           githubId: userData.githubId,
           name: userData.name,
           email: userData.email,
-          avatarUrl: userData.avatarUrl,
           isBanned: false,
         })
         .returning();
@@ -98,7 +97,6 @@ authRouter.get("/callback", async (c) => {
         .set({
           name: userData.name,
           email: userData.email,
-          avatarUrl: userData.avatarUrl,
         })
         .where(eq(userTable.id, user.id))
         .returning();
@@ -116,7 +114,7 @@ authRouter.get("/callback", async (c) => {
       id: user.id,
       githubId: user.githubId,
       isAdmin,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30, // 30 days
     };
     const token = await sign(payload, secret);
 
@@ -144,7 +142,6 @@ authRouter.get("/me", jwtMiddleware, async (c) => {
     githubId: dbUser[0]?.githubId,
     name: dbUser[0]?.name,
     email: dbUser[0]?.email,
-    avatarUrl: dbUser[0]?.avatarUrl,
     isAdmin: userPayload.isAdmin,
     isBanned: dbUser[0]?.isBanned,
   });
