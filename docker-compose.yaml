@@ -16,6 +16,7 @@ services:
       - "2006:80"
     environment:
       - DOMAINS=${DOMAINS}
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
     volumes:
       - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
     depends_on:
@@ -44,6 +45,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
+      - INTERNAL_SECRET=${INTERNAL_SECRET}
       - NODE_ENV=production
     depends_on:
       db:

@@ -4,6 +4,7 @@ import { db } from "../db";
 import { redis } from "../db/redis";
 import { domainTable } from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
+import { INTERNAL_SECRET } from "server/config";
 
 export const statsRouter = new Hono<{ Variables: { user: any } }>();
 
@@ -22,6 +23,11 @@ function getISOWeek(date: Date) {
 
 // Internal endpoint called by Nginx safely
 statsRouter.all("/increment", async (c) => {
+  const secret = c.req.header("X-Internal-Secret");
+  if (secret !== INTERNAL_SECRET) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
   const host = c.req.header("Host");
   if (!host) {
     return c.json({ error: "Missing Host header" }, 400);
