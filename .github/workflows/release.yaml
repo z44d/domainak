@@ -21,5 +21,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          name: Release ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
