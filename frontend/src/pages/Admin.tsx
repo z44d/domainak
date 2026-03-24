@@ -510,89 +510,87 @@ export default function Admin() {
           </div>
         </section>
 
-        <section className="field-grid field-grid--two surface-enter">
-          <div className="stack-lg">
-            <div className="table-shell">
-              <div className="table-toolbar">
-                <div>
-                  <p className="eyebrow">{currentMeta.eyebrow}</p>
-                  <h2 className="panel__title">{currentMeta.title}</h2>
-                  <p className="panel__copy">{currentMeta.description}</p>
-                </div>
-                <div className="table-toolbar__meta">
-                  <span className="tag">
-                    {viewData.pagination.total} total entries
-                  </span>
-                  <span className="tag">
-                    Page {viewData.pagination.page} of{" "}
-                    {viewData.pagination.totalPages}
-                  </span>
-                </div>
+        <section className="stack-lg surface-enter">
+          <div className="table-shell">
+            <div className="table-toolbar">
+              <div>
+                <p className="eyebrow">{currentMeta.eyebrow}</p>
+                <h2 className="panel__title">{currentMeta.title}</h2>
+                <p className="panel__copy">{currentMeta.description}</p>
               </div>
-
-              <div className="table-scroll">
-                {isViewLoading ? (
-                  <div className="empty-panel">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <h3 className="empty-panel__title">
-                      Loading {currentMeta.title.toLowerCase()}...
-                    </h3>
-                  </div>
-                ) : rows.length === 0 ? (
-                  <div className="empty-panel">
-                    <h3 className="empty-panel__title">
-                      {currentMeta.emptyTitle}
-                    </h3>
-                    <p className="empty-panel__copy">
-                      {currentMeta.emptyCopy}
-                    </p>
-                  </div>
-                ) : activeView === "domains" ? (
-                  <DomainsTable
-                    domains={rows as Domain[]}
-                    pendingActionKey={pendingActionKey}
-                    onDeleteDomain={handleDeleteDomain}
-                    onBanDomain={(domain) =>
-                      handleBanDomain(domain, "", true)
-                    }
-                    onToggleUserBan={handleToggleUserBan}
-                  />
-                ) : activeView === "users" ||
-                  activeView === "banned-users" ? (
-                  <UsersTable
-                    users={rows as AdminUserRow[]}
-                    pendingActionKey={pendingActionKey}
-                    onToggleUserBan={handleToggleUserBan}
-                  />
-                ) : activeView === "banned-domains" ? (
-                  <BannedDomainsTable
-                    domains={rows as BannedDomain[]}
-                    pendingActionKey={pendingActionKey}
-                    onUnbanDomain={handleUnbanDomain}
-                  />
-                ) : (
-                  <BannedIpsTable
-                    ips={rows as BannedIp[]}
-                    pendingActionKey={pendingActionKey}
-                    onUnbanIp={handleUnbanIp}
-                  />
-                )}
+              <div className="table-toolbar__meta">
+                <span className="tag">
+                  {viewData.pagination.total} total entries
+                </span>
+                <span className="tag">
+                  Page {viewData.pagination.page} of{" "}
+                  {viewData.pagination.totalPages}
+                </span>
               </div>
-
-              <PaginationControls
-                pagination={viewData.pagination}
-                isLoading={isViewLoading}
-                onPageChange={(page) => {
-                  setPages((prev) => ({
-                    ...prev,
-                    [activeView]: page,
-                  }));
-                }}
-              />
             </div>
+
+            <div className="table-scroll">
+              {isViewLoading ? (
+                <div className="empty-panel">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <h3 className="empty-panel__title">
+                    Loading {currentMeta.title.toLowerCase()}...
+                  </h3>
+                </div>
+              ) : rows.length === 0 ? (
+                <div className="empty-panel">
+                  <h3 className="empty-panel__title">
+                    {currentMeta.emptyTitle}
+                  </h3>
+                  <p className="empty-panel__copy">
+                    {currentMeta.emptyCopy}
+                  </p>
+                </div>
+              ) : activeView === "domains" ? (
+                <DomainsTable
+                  domains={rows as Domain[]}
+                  pendingActionKey={pendingActionKey}
+                  onDeleteDomain={handleDeleteDomain}
+                  onBanDomain={(domain) =>
+                    handleBanDomain(domain, "", true)
+                  }
+                  onToggleUserBan={handleToggleUserBan}
+                />
+              ) : activeView === "users" ||
+                activeView === "banned-users" ? (
+                <UsersTable
+                  users={rows as AdminUserRow[]}
+                  pendingActionKey={pendingActionKey}
+                  onToggleUserBan={handleToggleUserBan}
+                />
+              ) : activeView === "banned-domains" ? (
+                <BannedDomainsTable
+                  domains={rows as BannedDomain[]}
+                  pendingActionKey={pendingActionKey}
+                  onUnbanDomain={handleUnbanDomain}
+                />
+              ) : (
+                <BannedIpsTable
+                  ips={rows as BannedIp[]}
+                  pendingActionKey={pendingActionKey}
+                  onUnbanIp={handleUnbanIp}
+                />
+              )}
+            </div>
+
+            <PaginationControls
+              pagination={viewData.pagination}
+              isLoading={isViewLoading}
+              onPageChange={(page) => {
+                setPages((prev) => ({
+                  ...prev,
+                  [activeView]: page,
+                }));
+              }}
+            />
           </div>
 
-          <aside className="admin-side-panel">
+          <section className="admin-controls-grid">
             <section className="panel panel--soft moderation-side-panel moderation-side-panel--domain">
               <div className="panel__header">
                 <p className="eyebrow">
@@ -749,7 +747,7 @@ export default function Admin() {
                 </button>
               </form>
             </section>
-          </aside>
+          </section>
         </section>
       </main>
     </div>
