@@ -1,10 +1,4 @@
-import axios from "axios";
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { ApiError } from "./api";
 
 export function getUserLocale() {
   if (typeof navigator !== "undefined" && navigator.language) {
@@ -21,14 +15,24 @@ export function formatNumber(
   return new Intl.NumberFormat(getUserLocale(), options).format(value);
 }
 
+export function formatDate(value: string | number | Date) {
+  return new Intl.DateTimeFormat(getUserLocale(), {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 export function getErrorMessage(error: unknown, fallback: string) {
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     return "You appear to be offline. Reconnect and try again.";
   }
 
-  if (axios.isAxiosError(error)) {
-    const status = error.response?.status;
-    const apiMessage = error.response?.data?.error;
+  if (error instanceof ApiError) {
+    const status = error.status;
+    const apiMessage =
+      typeof error.data === "object" && error.data !== null
+        ? (error.data as { error?: unknown }).error
+        : undefined;
 
     if (typeof apiMessage === "string" && apiMessage.trim()) {
       return apiMessage;
@@ -46,9 +50,11 @@ export function getErrorMessage(error: unknown, fallback: string) {
       return "The server hit a problem. Try again in a moment.";
     }
 
-    if (error.code === "ECONNABORTED") {
-      return "The request timed out. Try again.";
-    }
+    return fallback;
+  }
+
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return fallback;
   }
 
   return fallback;

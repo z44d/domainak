@@ -1,14 +1,110 @@
-import axios from "axios";
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
 
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:2007/api",
-  withCredentials: true,
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("session_token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  constructor(status: number, message: string, data: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.data = data;
   }
-  return config;
-});
+}
+
+type Primitive = string | number | boolean;
+
+type RequestOptions = {
+  signal?: AbortSignal;
+  params?: Record<string, Primitive | null | undefined>;
+};
+
+type MutationOptions = RequestOptions & {
+  headers?: HeadersInit;
+};
+
+type JsonBody = Record<string, unknown> | Array<unknown>;
+
+const baseURL =
+  import.meta.env.VITE_API_URL || "http://localhost:2007/api";
+
+function buildUrl(path: string, params?: RequestOptions["params"]) {
+  const url = new URL(
+    path,
+    `${baseURL.endsWith("/") ? baseURL : `${baseURL}/`}`,
+  );
+
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      if (value == null) {
+        continue;
+      }
+
+      url.searchParams.set(key, String(value));
+    }
+  }
+
+  return url.toString();
+}
+
+async function parseResponseBody(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  return text ? { message: text } : null;
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit,
+  options?: MutationOptions,
+) {
+  const token = localStorage.getItem("session_token");
+  const headers = new Headers(options?.headers);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(buildUrl(path, options?.params), {
+    ...init,
+    headers,
+    credentials: "include",
+    signal: options?.signal,
+  });
+
+  const data = await parseResponseBody(response);
+
+  if (!response.ok) {
+    throw new ApiError(response.status, response.statusText, data);
+  }
+
+  return { data: data as T };
+}
+
+export const api = {
+  get<T>(path: string, options?: RequestOptions) {
+    return request<T>(path, { method: "GET" }, options);
+  },
+  post<T>(path: string, body?: JsonBody, options?: MutationOptions) {
+    const headers = new Headers(options?.headers);
+    headers.set("Content-Type", "application/json");
+
+    return request<T>(
+      path,
+      {
+        method: "POST",
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      {
+        ...options,
+        headers,
+      },
+    );
+  },
+  delete<T>(path: string, options?: MutationOptions) {
+    return request<T>(path, { method: "DELETE" }, options);
+  },
+};

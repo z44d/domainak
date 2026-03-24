@@ -1,33 +1,152 @@
 import {
   AlertCircle,
   Ban,
+  Globe,
   Loader2,
   ServerOff,
   ShieldAlert,
+  ShieldOff,
   Trash2,
+  Users,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
-import { api } from "../lib/api";
-import type { Domain, User } from "../lib/types";
-import { getErrorMessage } from "../lib/utils";
+import { ApiError, api } from "../lib/api";
+import type {
+  AdminUserRow,
+  BannedDomain,
+  BannedIp,
+  Domain,
+  PaginatedResponse,
+  PaginationMeta,
+  User,
+} from "../lib/types";
+import { formatDate, getErrorMessage } from "../lib/utils";
+
+type AdminView =
+  | "domains"
+  | "users"
+  | "banned-users"
+  | "banned-domains"
+  | "banned-ips";
+
+type AdminItem = Domain | AdminUserRow | BannedDomain | BannedIp;
+
+const PAGE_SIZE = 20;
+
+const viewMeta: Record<
+  AdminView,
+  {
+    title: string;
+    eyebrow: string;
+    description: string;
+    emptyTitle: string;
+    emptyCopy: string;
+    endpoint: string;
+    icon: typeof Globe;
+  }
+> = {
+  domains: {
+    title: "Domains",
+    eyebrow: "Routing inventory",
+    description:
+      "Review every registered route, remove it, or escalate it into a domain ban without being limited to the latest 100 entries.",
+    emptyTitle: "No domains to review",
+    emptyCopy: "New registrations will appear here as they are created.",
+    endpoint: "/admin/domains",
+    icon: Globe,
+  },
+  users: {
+    title: "Users",
+    eyebrow: "Account inventory",
+    description:
+      "Browse every account, see how many domains each user owns, and react quickly when someone needs moderation.",
+    emptyTitle: "No users yet",
+    emptyCopy: "User accounts will appear here after the first login.",
+    endpoint: "/admin/users",
+    icon: Users,
+  },
+  "banned-users": {
+    title: "Banned users",
+    eyebrow: "Restricted accounts",
+    description:
+      "Audit blocked accounts separately so unban decisions stay fast and deliberate.",
+    emptyTitle: "No banned users",
+    emptyCopy:
+      "Banned accounts will appear here when moderation actions are taken.",
+    endpoint: "/admin/banned-users",
+    icon: Ban,
+  },
+  "banned-domains": {
+    title: "Banned domains",
+    eyebrow: "Blocked routes",
+    description:
+      "Track domains that can no longer be registered and reverse the block when the incident is resolved.",
+    emptyTitle: "No banned domains",
+    emptyCopy: "Blocked domains will appear here after you ban them.",
+    endpoint: "/admin/banned-domains",
+    icon: ShieldAlert,
+  },
+  "banned-ips": {
+    title: "Blocked IPs",
+    eyebrow: "Network blocks",
+    description:
+      "Keep a clean list of abusive sources, review reasons, and unblock them when needed.",
+    emptyTitle: "No blocked IPs",
+    emptyCopy:
+      "Blocked IP addresses and hostnames will appear here after you add them.",
+    endpoint: "/admin/ips",
+    icon: ServerOff,
+  },
+};
+
+const initialPagination = (): PaginationMeta => ({
+  page: 1,
+  pageSize: PAGE_SIZE,
+  total: 0,
+  totalPages: 1,
+  hasNext: false,
+  hasPrevious: false,
+});
 
 export default function Admin() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
-  const [domains, setDomains] = useState<Domain[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [ipToBan, setIpToBan] = useState("");
-  const [banReason, setBanReason] = useState("");
-  const [isBanningIp, setIsBanningIp] = useState(false);
+  const [activeView, setActiveView] = useState<AdminView>("domains");
+  const [pages, setPages] = useState<Record<AdminView, number>>({
+    domains: 1,
+    users: 1,
+    "banned-users": 1,
+    "banned-domains": 1,
+    "banned-ips": 1,
+  });
+  const [viewData, setViewData] = useState<PaginatedResponse<AdminItem>>({
+    items: [],
+    pagination: initialPagination(),
+  });
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [isViewLoading, setIsViewLoading] = useState(false);
   const [pageError, setPageError] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [pendingDomainId, setPendingDomainId] = useState<number | null>(
+  const [domainToBan, setDomainToBan] = useState("");
+  const [domainReason, setDomainReason] = useState("");
+  const [ipToBan, setIpToBan] = useState("");
+  const [banReason, setBanReason] = useState("");
+  const [pendingActionKey, setPendingActionKey] = useState<string | null>(
     null,
   );
-  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const feedbackTimeoutRef = useRef<number | null>(null);
+
+  const currentPage = pages[activeView];
+  const currentMeta = viewMeta[activeView];
 
   const setTransientFeedback = useCallback((message: string) => {
     setFeedback(message);
@@ -40,24 +159,46 @@ export default function Admin() {
     }, 4000);
   }, []);
 
-  const fetchData = useCallback(
+  const ensureAdmin = useCallback(
     async (signal?: AbortSignal) => {
-      try {
-        setPageError("");
-        const { data: userData } = await api.get("/auth/me", { signal });
-        if (!userData.isAdmin) {
-          navigate("/dashboard", { replace: true });
-          return;
-        }
+      if (user) {
+        return user;
+      }
 
-        setUser(userData);
-        const res = await api.get("/admin/domains", { signal });
-        setDomains(res.data.domains);
+      const { data: userData } = await api.get<User>("/auth/me", {
+        signal,
+      });
+      if (!userData.isAdmin) {
+        navigate("/dashboard", { replace: true });
+        return null;
+      }
+
+      setUser(userData);
+      return userData as User;
+    },
+    [navigate, user],
+  );
+
+  const loadView = useCallback(
+    async (view: AdminView, page: number, signal?: AbortSignal) => {
+      setPageError("");
+      setIsViewLoading(true);
+
+      try {
+        const res = await api.get<PaginatedResponse<AdminItem>>(
+          viewMeta[view].endpoint,
+          {
+            params: {
+              page,
+              pageSize: PAGE_SIZE,
+            },
+            signal,
+          },
+        );
+
+        setViewData(res.data);
       } catch (error: unknown) {
-        if (
-          (error as { response?: { status: number } })?.response
-            ?.status === 401
-        ) {
+        if (error instanceof ApiError && error.status === 401) {
           localStorage.removeItem("session_token");
           navigate("/", { replace: true });
         } else if (!signal?.aborted) {
@@ -70,16 +211,48 @@ export default function Admin() {
         }
       } finally {
         if (!signal?.aborted) {
-          setIsLoading(false);
+          setIsViewLoading(false);
+          setIsInitializing(false);
         }
       }
     },
     [navigate],
   );
 
+  const reloadCurrentView = useCallback(
+    async (signal?: AbortSignal) => {
+      await loadView(activeView, pages[activeView], signal);
+    },
+    [activeView, loadView, pages],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
-    fetchData(controller.signal);
+
+    void (async () => {
+      try {
+        const currentUser = await ensureAdmin(controller.signal);
+        if (!currentUser || controller.signal.aborted) {
+          return;
+        }
+
+        await loadView(activeView, currentPage, controller.signal);
+      } catch (error: unknown) {
+        if (error instanceof ApiError && error.status === 401) {
+          localStorage.removeItem("session_token");
+          navigate("/", { replace: true });
+        } else if (!controller.signal.aborted) {
+          setPageError(
+            getErrorMessage(
+              error,
+              "We could not load moderation tools right now.",
+            ),
+          );
+          setIsInitializing(false);
+          setIsViewLoading(false);
+        }
+      }
+    })();
 
     return () => {
       controller.abort();
@@ -87,76 +260,163 @@ export default function Admin() {
         window.clearTimeout(feedbackTimeoutRef.current);
       }
     };
-  }, [fetchData]);
+  }, [activeView, currentPage, ensureAdmin, loadView, navigate]);
 
-  const handleDeleteDomain = async (id: number) => {
-    setPendingDomainId(id);
-    try {
-      await api.delete(`/admin/domains/${id}`);
-      setDomains(domains.filter((domain) => domain.id !== id));
-      setTransientFeedback("Domain removed from the global list.");
-    } catch (error: unknown) {
-      setFeedback(
-        getErrorMessage(error, "We could not remove that domain."),
-      );
-    } finally {
-      setPendingDomainId(null);
-    }
-  };
+  const runAction = useCallback(
+    async (key: string, action: () => Promise<void>) => {
+      setPendingActionKey(key);
+      try {
+        await action();
+      } finally {
+        setPendingActionKey(null);
+      }
+    },
+    [],
+  );
 
-  const handleToggleUserBan = async (
-    userId: number,
-    currentStatus: boolean,
-  ) => {
-    const action = currentStatus ? "unban" : "ban";
+  const handleDeleteDomain = useCallback(
+    async (id: number) => {
+      if (
+        !window.confirm("Remove this domain from the global routing list?")
+      ) {
+        return;
+      }
 
-    setPendingUserId(userId);
-    try {
-      await api.post(`/admin/users/${userId}/ban`, {
-        isBanned: !currentStatus,
+      await runAction(`domain-delete-${id}`, async () => {
+        await api.delete(`/admin/domains/${id}`);
+        setTransientFeedback("Domain removed from the global list.");
+        await reloadCurrentView();
       });
-      setTransientFeedback(`User ${action} complete.`);
-      fetchData();
-    } catch (error: unknown) {
-      setFeedback(
-        getErrorMessage(error, `We could not ${action} that user.`),
-      );
-    } finally {
-      setPendingUserId(null);
-    }
-  };
+    },
+    [reloadCurrentView, runAction, setTransientFeedback],
+  );
 
-  const handleBanIp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ipToBan) return;
+  const handleToggleUserBan = useCallback(
+    async (userId: number, currentStatus: boolean) => {
+      const actionLabel = currentStatus ? "unban" : "ban";
+      if (
+        !window.confirm(
+          currentStatus
+            ? "Restore this user account?"
+            : "Ban this user account and keep them from using the platform?",
+        )
+      ) {
+        return;
+      }
 
-    const trimmedIp = ipToBan.trim();
-    const trimmedReason = banReason.trim();
-
-    if (trimmedIp.length < 3) {
-      setFeedback("Enter a longer IP address or hostname.");
-      return;
-    }
-
-    setIsBanningIp(true);
-    try {
-      await api.post("/admin/ips/ban", {
-        ip: trimmedIp,
-        reason: trimmedReason,
+      await runAction(`user-${userId}`, async () => {
+        await api.post(`/admin/users/${userId}/ban`, {
+          isBanned: !currentStatus,
+        });
+        setTransientFeedback(`User ${actionLabel} complete.`);
+        await reloadCurrentView();
       });
-      setTransientFeedback("IP address blocked.");
-      setIpToBan("");
-      setBanReason("");
-    } catch (error: unknown) {
-      setFeedback(
-        getErrorMessage(error, "We could not block that address."),
-      );
-    } finally {
-      setIsBanningIp(false);
-    }
-  };
+    },
+    [reloadCurrentView, runAction, setTransientFeedback],
+  );
 
-  if (isLoading) {
+  const handleBanDomain = useCallback(
+    async (domain: string, reason: string, fromRow = false) => {
+      const trimmedDomain = domain.trim().toLowerCase();
+      const trimmedReason = reason.trim();
+
+      if (!trimmedDomain) {
+        setFeedback("Enter a domain before saving the block.");
+        return;
+      }
+
+      if (
+        !window.confirm(
+          fromRow
+            ? `Ban ${trimmedDomain} and remove it from the active routing list?`
+            : `Ban ${trimmedDomain} so it cannot be registered again?`,
+        )
+      ) {
+        return;
+      }
+
+      await runAction(`ban-domain-${trimmedDomain}`, async () => {
+        await api.post("/admin/banned-domains", {
+          domain: trimmedDomain,
+          reason: trimmedReason,
+        });
+        setTransientFeedback("Domain blocked.");
+        setDomainToBan("");
+        setDomainReason("");
+        await reloadCurrentView();
+      });
+    },
+    [reloadCurrentView, runAction, setTransientFeedback],
+  );
+
+  const handleUnbanDomain = useCallback(
+    async (id: number) => {
+      if (!window.confirm("Remove this domain from the banned list?")) {
+        return;
+      }
+
+      await runAction(`unban-domain-${id}`, async () => {
+        await api.delete(`/admin/banned-domains/${id}`);
+        setTransientFeedback("Domain unblocked.");
+        await reloadCurrentView();
+      });
+    },
+    [reloadCurrentView, runAction, setTransientFeedback],
+  );
+
+  const handleBanIp = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      const trimmedIp = ipToBan.trim();
+      const trimmedReason = banReason.trim();
+
+      if (trimmedIp.length < 3) {
+        setFeedback("Enter a longer IP address or hostname.");
+        return;
+      }
+
+      await runAction(`ban-ip-${trimmedIp}`, async () => {
+        await api.post("/admin/ips/ban", {
+          ip: trimmedIp,
+          reason: trimmedReason,
+        });
+        setTransientFeedback("IP address blocked.");
+        setIpToBan("");
+        setBanReason("");
+        await reloadCurrentView();
+      });
+    },
+    [
+      banReason,
+      ipToBan,
+      reloadCurrentView,
+      runAction,
+      setTransientFeedback,
+    ],
+  );
+
+  const handleUnbanIp = useCallback(
+    async (id: number) => {
+      if (
+        !window.confirm(
+          "Remove this IP or hostname from the blocked list?",
+        )
+      ) {
+        return;
+      }
+
+      await runAction(`unban-ip-${id}`, async () => {
+        await api.delete(`/admin/ips/${id}`);
+        setTransientFeedback("Address unblocked.");
+        await reloadCurrentView();
+      });
+    },
+    [reloadCurrentView, runAction, setTransientFeedback],
+  );
+
+  const rows = useMemo(() => viewData.items, [viewData.items]);
+
+  if (isInitializing) {
     return (
       <div className="loading-screen" aria-live="polite" aria-busy="true">
         <div className="loading-stack">
@@ -172,15 +432,15 @@ export default function Admin() {
       <Navbar user={user} />
 
       <main className="app-main stack-lg">
-        <header className="page-header surface-enter">
+        <header className="page-header surface-enter moderation-header">
           <div className="eyebrow">
             <ShieldAlert className="w-4 h-4" /> Admin control
           </div>
           <h1 className="page-title page-title--compact">Moderation</h1>
           <p className="page-copy">
-            Review recent domains, remove routes that should not stay live,
-            and block abusive addresses with the same calm control surface
-            used in the rest of the product.
+            Move through domains, users, banned users, banned domains, and
+            blocked IPs with dedicated paginated views instead of a single
+            capped feed.
           </p>
         </header>
 
@@ -200,8 +460,7 @@ export default function Admin() {
               <button
                 type="button"
                 onClick={() => {
-                  setIsLoading(true);
-                  fetchData();
+                  void reloadCurrentView();
                 }}
                 className="button button-secondary"
               >
@@ -217,88 +476,208 @@ export default function Admin() {
           </div>
         ) : null}
 
-        {!pageError ? (
-          <section className="field-grid field-grid--two surface-enter">
-            <div className="stack-lg">
+        <section className="panel surface-enter moderation-queue-panel">
+          <div className="panel__header">
+            <p className="eyebrow">Moderation queues</p>
+            <h2 className="panel__title">Choose a paginated view</h2>
+            <p className="panel__copy">
+              Each queue loads its own page so large installations stay
+              responsive.
+            </p>
+          </div>
+
+          <div className="admin-view-grid">
+            {(Object.keys(viewMeta) as AdminView[]).map((view) => {
+              const Icon = viewMeta[view].icon;
+              const isActive = activeView === view;
+
+              return (
+                <button
+                  key={view}
+                  type="button"
+                  className={`button admin-view-button ${isActive ? "button-secondary admin-view-button--active" : "button-ghost"}`}
+                  onClick={() => setActiveView(view)}
+                >
+                  <span className="admin-view-button__title">
+                    <Icon className="w-4 h-4" /> {viewMeta[view].title}
+                  </span>
+                  <span className="admin-view-button__copy">
+                    {viewMeta[view].eyebrow}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="field-grid field-grid--two surface-enter">
+          <div className="stack-lg">
+            <div className="table-shell">
+              <div className="table-toolbar">
+                <div>
+                  <p className="eyebrow">{currentMeta.eyebrow}</p>
+                  <h2 className="panel__title">{currentMeta.title}</h2>
+                  <p className="panel__copy">{currentMeta.description}</p>
+                </div>
+                <div className="table-toolbar__meta">
+                  <span className="tag">
+                    {viewData.pagination.total} total entries
+                  </span>
+                  <span className="tag">
+                    Page {viewData.pagination.page} of{" "}
+                    {viewData.pagination.totalPages}
+                  </span>
+                </div>
+              </div>
+
+              <div className="table-scroll">
+                {isViewLoading ? (
+                  <div className="empty-panel">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <h3 className="empty-panel__title">
+                      Loading {currentMeta.title.toLowerCase()}...
+                    </h3>
+                  </div>
+                ) : rows.length === 0 ? (
+                  <div className="empty-panel">
+                    <h3 className="empty-panel__title">
+                      {currentMeta.emptyTitle}
+                    </h3>
+                    <p className="empty-panel__copy">
+                      {currentMeta.emptyCopy}
+                    </p>
+                  </div>
+                ) : activeView === "domains" ? (
+                  <DomainsTable
+                    domains={rows as Domain[]}
+                    pendingActionKey={pendingActionKey}
+                    onDeleteDomain={handleDeleteDomain}
+                    onBanDomain={(domain) =>
+                      handleBanDomain(domain, "", true)
+                    }
+                    onToggleUserBan={handleToggleUserBan}
+                  />
+                ) : activeView === "users" ||
+                  activeView === "banned-users" ? (
+                  <UsersTable
+                    users={rows as AdminUserRow[]}
+                    pendingActionKey={pendingActionKey}
+                    onToggleUserBan={handleToggleUserBan}
+                  />
+                ) : activeView === "banned-domains" ? (
+                  <BannedDomainsTable
+                    domains={rows as BannedDomain[]}
+                    pendingActionKey={pendingActionKey}
+                    onUnbanDomain={handleUnbanDomain}
+                  />
+                ) : (
+                  <BannedIpsTable
+                    ips={rows as BannedIp[]}
+                    pendingActionKey={pendingActionKey}
+                    onUnbanIp={handleUnbanIp}
+                  />
+                )}
+              </div>
+
+              <PaginationControls
+                pagination={viewData.pagination}
+                isLoading={isViewLoading}
+                onPageChange={(page) => {
+                  setPages((prev) => ({
+                    ...prev,
+                    [activeView]: page,
+                  }));
+                }}
+              />
+            </div>
+          </div>
+
+          <aside className="admin-side-panel">
+            <section className="panel panel--soft moderation-side-panel moderation-side-panel--domain">
               <div className="panel__header">
-                <p className="eyebrow">Recent domains</p>
-                <h2 className="panel__title">Latest registrations</h2>
+                <p className="eyebrow">
+                  <ShieldAlert className="w-4 h-4" /> Domain control
+                </p>
+                <h2 className="panel__title">Block a domain</h2>
                 <p className="panel__copy">
-                  The list stays dense but readable, with only the actions
-                  that matter in moderation moments.
+                  Prevent a route from being registered again, even if it
+                  is not in the active domains list right now.
                 </p>
               </div>
 
-              <div className="table-shell">
-                <div className="table-scroll">
-                  <table className="data-table">
-                    <caption className="sr-only">
-                      Recently registered domains and moderation actions.
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th>Subdomain</th>
-                        <th>Target</th>
-                        <th>User</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {domains.map((domain) => (
-                        <tr key={domain.id}>
-                          <td>
-                            <strong
-                              className="text-wrap-anywhere"
-                              dir="auto"
-                            >
-                              {domain.subdomain}
-                            </strong>
-                          </td>
-                          <td className="text-wrap-anywhere" dir="auto">
-                            {domain.hostname}:{domain.port}
-                          </td>
-                          <td
-                            title={domain.user?.email}
-                            className="text-wrap-anywhere"
-                            dir="auto"
-                          >
-                            {domain.user?.name}
-                          </td>
-                          <td>
-                            <AdminRowActions
-                              domain={domain}
-                              onBanUser={handleToggleUserBan}
-                              onDeleteDomain={handleDeleteDomain}
-                              isDeleting={pendingDomainId === domain.id}
-                              isUpdatingUser={
-                                pendingUserId === domain.user?.id
-                              }
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                      {domains.length === 0 && (
-                        <tr>
-                          <td colSpan={4}>
-                            <div className="empty-panel">
-                              <h3 className="empty-panel__title">
-                                No domains to review
-                              </h3>
-                              <p className="empty-panel__copy">
-                                New registrations will appear here when
-                                they are created.
-                              </p>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleBanDomain(domainToBan, domainReason);
+                }}
+                className="field-grid"
+              >
+                <div className="field">
+                  <label htmlFor="domainInput" className="field-label">
+                    Full domain
+                  </label>
+                  <span className="field-hint">
+                    Example: app.example.com
+                  </span>
+                  <input
+                    id="domainInput"
+                    type="text"
+                    required
+                    maxLength={255}
+                    value={domainToBan}
+                    onChange={(e) => setDomainToBan(e.target.value)}
+                    placeholder="app.example.com"
+                    className="text-field"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    dir="auto"
+                  />
                 </div>
-              </div>
-            </div>
 
-            <aside className="panel panel--soft">
+                <div className="field">
+                  <label
+                    htmlFor="domainReasonInput"
+                    className="field-label"
+                  >
+                    Reason
+                  </label>
+                  <span className="field-hint">
+                    Optional context for future moderation reviews.
+                  </span>
+                  <input
+                    id="domainReasonInput"
+                    type="text"
+                    maxLength={160}
+                    value={domainReason}
+                    onChange={(e) => setDomainReason(e.target.value)}
+                    placeholder="Malware, abuse, or impersonation"
+                    className="text-field"
+                    dir="auto"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={
+                    pendingActionKey ===
+                      `ban-domain-${domainToBan.trim().toLowerCase()}` ||
+                    !domainToBan.trim()
+                  }
+                  className="button button-danger"
+                >
+                  {pendingActionKey ===
+                  `ban-domain-${domainToBan.trim().toLowerCase()}` ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Ban className="w-4 h-4" />
+                  )}
+                  Block domain
+                </button>
+              </form>
+            </section>
+
+            <section className="panel panel--soft moderation-side-panel moderation-side-panel--network">
               <div className="panel__header">
                 <p className="eyebrow">
                   <ServerOff className="w-4 h-4" /> Network control
@@ -306,7 +685,7 @@ export default function Admin() {
                 <h2 className="panel__title">Block an IP or hostname</h2>
                 <p className="panel__copy">
                   Use this when a source should stop reaching the service
-                  across the entire platform.
+                  across the platform.
                 </p>
               </div>
 
@@ -355,10 +734,13 @@ export default function Admin() {
 
                 <button
                   type="submit"
-                  disabled={isBanningIp || !ipToBan}
+                  disabled={
+                    pendingActionKey === `ban-ip-${ipToBan.trim()}` ||
+                    !ipToBan.trim()
+                  }
                   className="button button-danger"
                 >
-                  {isBanningIp ? (
+                  {pendingActionKey === `ban-ip-${ipToBan.trim()}` ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Ban className="w-4 h-4" />
@@ -366,105 +748,343 @@ export default function Admin() {
                   Block address
                 </button>
               </form>
-            </aside>
-          </section>
-        ) : null}
+            </section>
+          </aside>
+        </section>
       </main>
     </div>
   );
 }
 
-function AdminRowActions({
-  domain,
-  onBanUser,
+function DomainsTable({
+  domains,
+  pendingActionKey,
   onDeleteDomain,
-  isDeleting,
-  isUpdatingUser,
+  onBanDomain,
+  onToggleUserBan,
 }: {
-  domain: Domain;
-  onBanUser: (userId: number, currentStatus: boolean) => Promise<void>;
+  domains: Domain[];
+  pendingActionKey: string | null;
   onDeleteDomain: (id: number) => Promise<void>;
-  isDeleting: boolean;
-  isUpdatingUser: boolean;
+  onBanDomain: (domain: string) => Promise<void>;
+  onToggleUserBan: (
+    userId: number,
+    currentStatus: boolean,
+  ) => Promise<void>;
 }) {
-  const [confirming, setConfirming] = useState<"user" | "domain" | null>(
-    null,
-  );
+  return (
+    <table className="data-table">
+      <caption className="sr-only">
+        Registered domains and moderation actions.
+      </caption>
+      <thead>
+        <tr>
+          <th>Domain</th>
+          <th>Target</th>
+          <th>User</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {domains.map((domain) => {
+          const userId = domain.user?.id;
+          const isUserBanned = domain.user?.isBanned ?? false;
 
-  return confirming === null ? (
-    <div className="nav-actions">
-      <button
-        type="button"
-        onClick={() => {
-          if (domain.user?.id != null) {
-            setConfirming("user");
-          }
-        }}
-        className="button button-ghost"
-        disabled={domain.user?.id == null || isDeleting || isUpdatingUser}
-      >
-        <Ban className="w-4 h-4" /> Ban user
-      </button>
-      <button
-        type="button"
-        onClick={() => setConfirming("domain")}
-        className="button button-danger"
-        disabled={isDeleting || isUpdatingUser}
-      >
-        <Trash2 className="w-4 h-4" /> Remove
-      </button>
-    </div>
-  ) : (
-    <div
-      className="confirm-actions"
-      role="group"
-      aria-label="Confirm moderation action"
-    >
-      {confirming === "user" ? (
+          return (
+            <tr key={domain.id}>
+              <td>
+                <strong className="text-wrap-anywhere" dir="auto">
+                  {domain.subdomain}
+                </strong>
+              </td>
+              <td className="text-wrap-anywhere" dir="auto">
+                {domain.hostname}:{domain.port}
+              </td>
+              <td className="text-wrap-anywhere" dir="auto">
+                <strong>{domain.user?.name || "Unknown user"}</strong>
+                <div className="table-note">
+                  {domain.user?.email || "No email"}
+                </div>
+              </td>
+              <td>
+                {domain.createdAt ? formatDate(domain.createdAt) : "-"}
+              </td>
+              <td>
+                <div className="nav-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (userId != null) {
+                        void onToggleUserBan(userId, isUserBanned);
+                      }
+                    }}
+                    className={`button ${isUserBanned ? "button-secondary" : "button-ghost"}`}
+                    disabled={
+                      userId == null ||
+                      pendingActionKey === `user-${userId}`
+                    }
+                  >
+                    {pendingActionKey === `user-${userId}` ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Ban className="w-4 h-4" />
+                    )}
+                    {isUserBanned ? "Unban user" : "Ban user"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onBanDomain(domain.subdomain)}
+                    className="button button-danger"
+                    disabled={
+                      pendingActionKey === `ban-domain-${domain.subdomain}`
+                    }
+                  >
+                    {pendingActionKey ===
+                    `ban-domain-${domain.subdomain}` ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ShieldAlert className="w-4 h-4" />
+                    )}
+                    Ban domain
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void onDeleteDomain(domain.id)}
+                    className="button button-secondary"
+                    disabled={
+                      pendingActionKey === `domain-delete-${domain.id}`
+                    }
+                  >
+                    {pendingActionKey === `domain-delete-${domain.id}` ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    Remove
+                  </button>
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function UsersTable({
+  users,
+  pendingActionKey,
+  onToggleUserBan,
+}: {
+  users: AdminUserRow[];
+  pendingActionKey: string | null;
+  onToggleUserBan: (
+    userId: number,
+    currentStatus: boolean,
+  ) => Promise<void>;
+}) {
+  return (
+    <table className="data-table">
+      <caption className="sr-only">Users and moderation actions.</caption>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>GitHub ID</th>
+          <th>Domains</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {users.map((entry) => (
+          <tr key={entry.id}>
+            <td className="text-wrap-anywhere" dir="auto">
+              <strong>{entry.name}</strong>
+              <div className="table-note">{entry.email}</div>
+            </td>
+            <td>{entry.githubId}</td>
+            <td>{entry.domainCount}</td>
+            <td>
+              <span
+                className={`tag ${entry.isBanned ? "tag--danger" : "tag--success"}`}
+              >
+                {entry.isBanned ? "Banned" : "Active"}
+              </span>
+            </td>
+            <td>
+              <button
+                type="button"
+                onClick={() =>
+                  void onToggleUserBan(entry.id, entry.isBanned)
+                }
+                className={
+                  entry.isBanned
+                    ? "button button-secondary"
+                    : "button button-danger"
+                }
+                disabled={pendingActionKey === `user-${entry.id}`}
+              >
+                {pendingActionKey === `user-${entry.id}` ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : entry.isBanned ? (
+                  <ShieldOff className="w-4 h-4" />
+                ) : (
+                  <Ban className="w-4 h-4" />
+                )}
+                {entry.isBanned ? "Unban user" : "Ban user"}
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function BannedDomainsTable({
+  domains,
+  pendingActionKey,
+  onUnbanDomain,
+}: {
+  domains: BannedDomain[];
+  pendingActionKey: string | null;
+  onUnbanDomain: (id: number) => Promise<void>;
+}) {
+  return (
+    <table className="data-table">
+      <caption className="sr-only">
+        Blocked domains and unban actions.
+      </caption>
+      <thead>
+        <tr>
+          <th>Domain</th>
+          <th>Reason</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {domains.map((entry) => (
+          <tr key={entry.id}>
+            <td className="text-wrap-anywhere" dir="auto">
+              <strong className="text-highlight text-highlight--warm">
+                {entry.domain}
+              </strong>
+            </td>
+            <td className="text-wrap-anywhere" dir="auto">
+              {entry.reason || "No reason recorded"}
+            </td>
+            <td>{formatDate(entry.createdAt)}</td>
+            <td>
+              <button
+                type="button"
+                onClick={() => void onUnbanDomain(entry.id)}
+                className="button button-secondary"
+                disabled={pendingActionKey === `unban-domain-${entry.id}`}
+              >
+                {pendingActionKey === `unban-domain-${entry.id}` ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ShieldOff className="w-4 h-4" />
+                )}
+                Remove block
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function BannedIpsTable({
+  ips,
+  pendingActionKey,
+  onUnbanIp,
+}: {
+  ips: BannedIp[];
+  pendingActionKey: string | null;
+  onUnbanIp: (id: number) => Promise<void>;
+}) {
+  return (
+    <table className="data-table">
+      <caption className="sr-only">
+        Blocked IP addresses and hostnames.
+      </caption>
+      <thead>
+        <tr>
+          <th>Address</th>
+          <th>Reason</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {ips.map((entry) => (
+          <tr key={entry.id}>
+            <td className="text-wrap-anywhere" dir="auto">
+              <strong className="text-highlight">{entry.ip}</strong>
+            </td>
+            <td className="text-wrap-anywhere" dir="auto">
+              {entry.reason || "No reason recorded"}
+            </td>
+            <td>{formatDate(entry.createdAt)}</td>
+            <td>
+              <button
+                type="button"
+                onClick={() => void onUnbanIp(entry.id)}
+                className="button button-secondary"
+                disabled={pendingActionKey === `unban-ip-${entry.id}`}
+              >
+                {pendingActionKey === `unban-ip-${entry.id}` ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ShieldOff className="w-4 h-4" />
+                )}
+                Remove block
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PaginationControls({
+  pagination,
+  isLoading,
+  onPageChange,
+}: {
+  pagination: PaginationMeta;
+  isLoading: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="pagination-bar">
+      <div className="pagination-summary">
+        Showing up to {pagination.pageSize} items per page.
+      </div>
+      <div className="panel-actions">
         <button
           type="button"
-          onClick={async () => {
-            if (domain.user?.id != null) {
-              await onBanUser(domain.user.id, false);
-              setConfirming(null);
-            }
-          }}
-          className="button button-danger"
-          disabled={isUpdatingUser || isDeleting}
+          className="button button-ghost"
+          onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
+          disabled={!pagination.hasPrevious || isLoading}
         >
-          {isUpdatingUser ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Ban className="w-4 h-4" />
-          )}
-          Confirm ban
+          Previous
         </button>
-      ) : (
         <button
           type="button"
-          onClick={async () => {
-            await onDeleteDomain(domain.id);
-            setConfirming(null);
-          }}
-          className="button button-danger"
-          disabled={isDeleting || isUpdatingUser}
+          className="button button-secondary"
+          onClick={() => onPageChange(pagination.page + 1)}
+          disabled={!pagination.hasNext || isLoading}
         >
-          {isDeleting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Trash2 className="w-4 h-4" />
-          )}
-          Confirm remove
+          Next
         </button>
-      )}
-      <button
-        type="button"
-        onClick={() => setConfirming(null)}
-        className="button button-ghost"
-        disabled={isDeleting || isUpdatingUser}
-      >
-        Cancel
-      </button>
+      </div>
     </div>
   );
 }

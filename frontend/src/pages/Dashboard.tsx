@@ -8,7 +8,10 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  type ChangeEvent,
+  type FormEvent,
   lazy,
+  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -18,9 +21,12 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import type { Domain, Stats, User } from "../lib/types";
 import { formatNumber, getErrorMessage } from "../lib/utils";
+
+type DomainsResponse = { domains: Domain[] };
+type AvailableDomainsResponse = { available: string[] };
 
 const DomainStatsChart = lazy(
   () => import("../components/DomainStatsChart"),
@@ -62,27 +68,30 @@ export default function Dashboard() {
     async (signal?: AbortSignal) => {
       try {
         setPageError("");
-        const { data: userData } = await api.get("/auth/me", { signal });
+        const { data: userData } = await api.get<User>("/auth/me", {
+          signal,
+        });
         setUser(userData);
 
         const [domainsRes, availableRes] = await Promise.all([
-          api.get("/domains", { signal }),
-          api.get("/domains/available", { signal }),
+          api.get<DomainsResponse>("/domains", { signal }),
+          api.get<AvailableDomainsResponse>("/domains/available", {
+            signal,
+          }),
         ]);
 
         setDomains(domainsRes.data.domains);
         setAvailableDomains(availableRes.data.available);
         if (availableRes.data.available.length > 0) {
+          const firstAvailableDomain =
+            availableRes.data.available[0] ?? "";
           setFormData((prev) => ({
             ...prev,
-            domain: availableRes.data.available[0],
+            domain: firstAvailableDomain,
           }));
         }
       } catch (error: unknown) {
-        if (
-          (error as { response?: { status: number } })?.response
-            ?.status === 401
-        ) {
+        if (error instanceof ApiError && error.status === 401) {
           localStorage.removeItem("session_token");
           navigate("/", { replace: true });
         } else if (!signal?.aborted) {
@@ -114,77 +123,89 @@ export default function Dashboard() {
     };
   }, [fetchData]);
 
-  const handleAddSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAddError("");
-    setFeedback("");
+  const handleAddSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      setAddError("");
+      setFeedback("");
 
-    const trimmedSubdomain = formData.subdomain.trim();
-    const trimmedHostname = formData.hostname.trim();
-    const parsedPort = Number(formData.port);
+      const trimmedSubdomain = formData.subdomain.trim();
+      const trimmedHostname = formData.hostname.trim();
+      const parsedPort = Number(formData.port);
 
-    if (!trimmedSubdomain || !trimmedHostname) {
-      setAddError("Enter a subdomain and destination host to continue.");
-      return;
-    }
+      if (!trimmedSubdomain || !trimmedHostname) {
+        setAddError("Enter a subdomain and destination host to continue.");
+        return;
+      }
 
-    if (trimmedSubdomain.length < 2) {
-      setAddError("Use at least 2 characters for the subdomain.");
-      return;
-    }
+      if (trimmedSubdomain.length < 2) {
+        setAddError("Use at least 2 characters for the subdomain.");
+        return;
+      }
 
-    if (Number.isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-      setAddError("Use a port between 1 and 65535.");
-      return;
-    }
+      if (
+        Number.isNaN(parsedPort) ||
+        parsedPort < 1 ||
+        parsedPort > 65535
+      ) {
+        setAddError("Use a port between 1 and 65535.");
+        return;
+      }
 
-    if (!formData.domain) {
-      setAddError("There are no available domain suffixes right now.");
-      return;
-    }
+      if (!formData.domain) {
+        setAddError("There are no available domain suffixes right now.");
+        return;
+      }
 
-    setIsSubmitting(true);
+      setIsSubmitting(true);
 
-    try {
-      await api.post("/domains", {
-        ...formData,
-        subdomain: trimmedSubdomain,
-        hostname: trimmedHostname,
-        port: parsedPort.toString(),
-      });
-      setShowAddForm(false);
-      setFormData({
-        subdomain: "",
-        domain: availableDomains[0] || "",
-        hostname: "",
-        port: "",
-      });
-      setTransientFeedback("Domain registered successfully.");
-      fetchData();
-    } catch (error: unknown) {
-      setAddError(
-        getErrorMessage(error, "We could not register that domain yet."),
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+      try {
+        await api.post("/domains", {
+          ...formData,
+          subdomain: trimmedSubdomain,
+          hostname: trimmedHostname,
+          port: parsedPort.toString(),
+        });
+        setShowAddForm(false);
+        setFormData({
+          subdomain: "",
+          domain: availableDomains[0] || "",
+          hostname: "",
+          port: "",
+        });
+        setTransientFeedback("Domain registered successfully.");
+        await fetchData();
+      } catch (error: unknown) {
+        setAddError(
+          getErrorMessage(error, "We could not register that domain yet."),
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [availableDomains, fetchData, formData, setTransientFeedback],
+  );
 
-  const handleDelete = async (id: number) => {
-    setFeedback("");
-    setDeletingId(id);
-    try {
-      await api.delete(`/domains/${id}`);
-      setDomains(domains.filter((domain) => domain.id !== id));
-      setTransientFeedback("Domain removed from your workspace.");
-    } catch (error: unknown) {
-      setFeedback(
-        getErrorMessage(error, "We could not remove that domain."),
-      );
-    } finally {
-      setDeletingId(null);
-    }
-  };
+  const handleDelete = useCallback(
+    async (id: number) => {
+      setFeedback("");
+      setDeletingId(id);
+      try {
+        await api.delete(`/domains/${id}`);
+        setDomains((current) =>
+          current.filter((domain) => domain.id !== id),
+        );
+        setTransientFeedback("Domain removed from your workspace.");
+      } catch (error: unknown) {
+        setFeedback(
+          getErrorMessage(error, "We could not remove that domain."),
+        );
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [setTransientFeedback],
+  );
 
   if (isLoading) {
     return (
@@ -202,7 +223,7 @@ export default function Dashboard() {
       <Navbar user={user} />
 
       <main className="app-main stack-lg">
-        <header className="page-header page-header--split surface-enter">
+        <header className="page-header page-header--split surface-enter dashboard-header">
           <div>
             <div className="eyebrow">Workspace</div>
             <h1 className="page-title page-title--compact">Domains</h1>
@@ -257,7 +278,7 @@ export default function Dashboard() {
         ) : null}
 
         {!pageError && showAddForm && (
-          <section className="panel panel--soft surface-enter">
+          <section className="panel panel--soft surface-enter dashboard-form-panel">
             <div className="panel__header">
               <p className="eyebrow">Create route</p>
               <h2 className="panel__title">Register a new subdomain</h2>
@@ -415,7 +436,7 @@ export default function Dashboard() {
         )}
 
         {!pageError && domains.length === 0 ? (
-          <section className="empty-panel surface-enter">
+          <section className="empty-panel empty-panel--accent surface-enter">
             <div className="eyebrow">
               <Globe className="w-4 h-4" /> Empty workspace
             </div>
@@ -449,7 +470,7 @@ export default function Dashboard() {
   );
 }
 
-function DomainRow({
+const DomainRow = memo(function DomainRow({
   domain,
   onDelete,
   isDeleting,
@@ -478,9 +499,9 @@ function DomainRow({
     setIsLoadingStats(true);
     setStatsError("");
     try {
-      const res = await api.get(
-        `/stats/${domain.id}?year=${selectedYear}`,
-      );
+      const res = await api.get<Stats>(`/stats/${domain.id}`, {
+        params: { year: selectedYear },
+      });
       setStats(res.data);
     } catch (error: unknown) {
       setStatsError(
@@ -501,7 +522,7 @@ function DomainRow({
     setShowStats((current) => !current);
   };
 
-  const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleYearChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const nextYear = e.target.value;
     setYear(nextYear);
     if (showStats) {
@@ -510,7 +531,7 @@ function DomainRow({
   };
 
   return (
-    <article className="domain-row">
+    <article className="domain-row domain-row--signal">
       <div className="domain-row__top">
         <div className="domain-row__identity">
           <div className="eyebrow">
@@ -577,7 +598,7 @@ function DomainRow({
       </div>
 
       {showStats && (
-        <section className="chart-shell surface-enter">
+        <section className="chart-shell chart-shell--insight surface-enter">
           <div className="subtle-row">
             <div>
               <div className="eyebrow">
@@ -641,19 +662,23 @@ function DomainRow({
                 <MetricCard
                   label="Daily"
                   value={formatNumber(stats.daily)}
+                  tone="daily"
                 />
                 <MetricCard
                   label="Weekly"
                   value={formatNumber(stats.weekly)}
+                  tone="weekly"
                 />
                 <MetricCard
                   label="Monthly"
                   value={formatNumber(stats.monthly)}
+                  tone="monthly"
                 />
                 <MetricCard
                   label="Year total"
                   value={formatNumber(stats.total)}
                   accent
+                  tone="year"
                 />
               </div>
 
@@ -686,19 +711,23 @@ function DomainRow({
       )}
     </article>
   );
-}
+});
 
 function MetricCard({
   label,
   value,
   accent = false,
+  tone = "daily",
 }: {
   label: string;
   value: string;
   accent?: boolean;
+  tone?: "daily" | "weekly" | "monthly" | "year";
 }) {
   return (
-    <div className={`metric-card${accent ? " metric-card--accent" : ""}`}>
+    <div
+      className={`metric-card metric-card--${tone}${accent ? " metric-card--accent" : ""}`}
+    >
       <span className="metric-label">{label}</span>
       <span className="metric-value">{value}</span>
     </div>

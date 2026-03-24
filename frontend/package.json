@@ -10,14 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.13.6",
-    "clsx": "^2.1.1",
     "lucide-react": "^1.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.2",
-    "recharts": "^3.8.0",
-    "tailwind-merge": "^3.5.0"
+    "react-router-dom": "^7.13.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

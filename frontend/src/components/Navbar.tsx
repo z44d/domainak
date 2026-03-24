@@ -52,7 +52,11 @@ export function Navbar({ user }: { user: User | null }) {
                   src={`https://avatars.githubusercontent.com/u/${user.githubId}?v=4`}
                   alt={user.name}
                   className="avatar"
+                  width="40"
+                  height="40"
                   loading="lazy"
+                  decoding="async"
+                  fetchPriority="low"
                   referrerPolicy="no-referrer"
                 />
                 <span className="user-pill__text">

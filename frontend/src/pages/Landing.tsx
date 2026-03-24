@@ -5,6 +5,27 @@ import { useNavigate } from "react-router-dom";
 export default function Landing() {
   const navigate = useNavigate();
 
+  const features = [
+    {
+      tone: "signal",
+      kicker: "Fast claim",
+      title: "Claim a domain in one pass",
+      desc: "Choose a subdomain, pick an available suffix, and connect it without working through a long onboarding flow.",
+    },
+    {
+      tone: "route",
+      kicker: "Real infra",
+      title: "Route to real infrastructure",
+      desc: "Point traffic at a home server, VPS, tunnel endpoint, or internal hostname using the same form pattern every time.",
+    },
+    {
+      tone: "review",
+      kicker: "Measured review",
+      title: "Review traffic when it matters",
+      desc: "Open analytics only when you need them so the main workspace stays focused on routing decisions.",
+    },
+  ] as const;
+
   useEffect(() => {
     const token = localStorage.getItem("session_token");
     if (token) {
@@ -30,10 +51,14 @@ export default function Landing() {
               lives.
             </h1>
             <p className="hero-note">
-              Domainak gives mixed technical teams one calm place to
+              Domainak gives mixed technical teams one{" "}
+              <span className="text-highlight">calm place</span> to
               register a readable hostname, connect it to a tunnel or
-              server, and confirm that traffic is reaching the right
-              destination.
+              server, and confirm that traffic is reaching the{" "}
+              <span className="text-highlight text-highlight--warm">
+                right destination
+              </span>
+              .
             </p>
             <div className="hero-actions">
               <button
@@ -60,21 +85,15 @@ export default function Landing() {
             </div>
 
             <div className="feature-list" id="how-it-works">
-              {[
-                {
-                  title: "Claim a domain in one pass",
-                  desc: "Choose a subdomain, pick an available suffix, and connect it without working through a long onboarding flow.",
-                },
-                {
-                  title: "Route to real infrastructure",
-                  desc: "Point traffic at a home server, VPS, tunnel endpoint, or internal hostname using the same form pattern every time.",
-                },
-                {
-                  title: "Review traffic when it matters",
-                  desc: "Open analytics only when you need them so the main workspace stays focused on routing decisions.",
-                },
-              ].map((feature) => (
-                <div key={feature.title} className="feature-item">
+              {features.map((feature) => (
+                <div
+                  key={feature.title}
+                  className="feature-item"
+                  data-tone={feature.tone}
+                >
+                  <div className="feature-item__kicker">
+                    {feature.kicker}
+                  </div>
                   <div className="feature-item__title">
                     {feature.title}
                   </div>
