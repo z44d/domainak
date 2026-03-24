@@ -3,7 +3,7 @@ name: Build and Push to GHCR
 on:
   push:
     tags:
-      - "*"
+      - "v*"
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -51,7 +51,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.image_name }}
           tags: |
-            type=ref,event=tag
+            type=match,pattern=v(.*),group=1
             type=raw,value=latest
 
       - name: Build and push image
