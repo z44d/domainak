@@ -68,9 +68,6 @@ export default function Landing() {
               >
                 <Code className="w-5 h-5" /> Continue with GitHub
               </button>
-              <a href="#how-it-works" className="button button-secondary">
-                See how it works
-              </a>
             </div>
           </div>
 
