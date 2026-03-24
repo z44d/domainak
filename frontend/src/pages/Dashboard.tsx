@@ -1,5 +1,3 @@
-"use client";
-
 import {
   Activity,
   AlertCircle,
@@ -19,12 +17,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Navbar } from "@/components/Navbar";
-import { api } from "@/lib/api";
+import { Navbar } from "../components/Navbar";
+import { api } from "../lib/api";
+import type { Domain, User } from "../lib/types";
 
 export default function Dashboard() {
-  const [user, setUser] = useState<any>(null);
-  const [domains, setDomains] = useState<any[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [domains, setDomains] = useState<Domain[]>([]);
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -56,8 +55,11 @@ export default function Dashboard() {
           domain: availableRes.data.available[0],
         }));
       }
-    } catch (error: any) {
-      if (error.response?.status === 401) {
+    } catch (error: unknown) {
+      if (
+        (error as { response?: { status: number } })?.response?.status ===
+        401
+      ) {
         localStorage.removeItem("session_token");
         window.location.href = "/";
       }
@@ -84,8 +86,11 @@ export default function Dashboard() {
         port: "",
       });
       fetchData();
-    } catch (error: any) {
-      setAddError(error.response?.data?.error || "Failed to add domain");
+    } catch (error: unknown) {
+      setAddError(
+        (error as { response?: { data?: { error: string } } })?.response
+          ?.data?.error || "Failed to add domain",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -96,206 +101,9 @@ export default function Dashboard() {
     try {
       await api.delete(`/domains/${id}`);
       setDomains(domains.filter((d) => d.id !== id));
-    } catch (_error) {
+    } catch {
       alert("Failed to delete domain");
     }
-  };
-
-  const DomainCard = ({ domain }: { domain: any }) => {
-    const [stats, setStats] = useState<any>(null);
-    const [showStats, setShowStats] = useState(false);
-    const [isLoadingStats, setIsLoadingStats] = useState(false);
-
-    // Generate an array of recent years for the dropdown
-    const currentYear = new Date().getFullYear();
-    const years = Array.from({ length: 5 }, (_, i) =>
-      (currentYear - i).toString(),
-    );
-    const [year, setYear] = useState<string>(currentYear.toString());
-
-    const fetchStats = async (selectedYear: string) => {
-      setIsLoadingStats(true);
-      try {
-        const res = await api.get(
-          `/stats/${domain.id}?year=${selectedYear}`,
-        );
-        setStats(res.data);
-      } catch (_error) {
-        console.error("Failed to load stats");
-      } finally {
-        setIsLoadingStats(false);
-      }
-    };
-
-    const toggleStats = async () => {
-      if (!showStats && !stats) {
-        await fetchStats(year);
-      }
-      setShowStats(!showStats);
-    };
-
-    const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newYear = e.target.value;
-      setYear(newYear);
-      if (showStats) {
-        fetchStats(newYear);
-      }
-    };
-
-    return (
-      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 transition-all hover:border-slate-700">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
-              <Globe className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-white">
-                {domain.subdomain}
-              </h3>
-              <p className="text-sm text-slate-400">
-                Points to: {domain.hostname}:{domain.port}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggleStats}
-              className={`p-2 rounded-lg transition-colors ${showStats ? "bg-indigo-500/20 text-indigo-400" : "text-slate-400 hover:text-indigo-400 bg-slate-800/50 hover:bg-slate-800"}`}
-            >
-              <Activity className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDelete(domain.id)}
-              className="p-2 text-slate-400 hover:text-red-400 bg-slate-800/50 hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {showStats && (
-          <div className="mt-6 pt-6 border-t border-slate-800 animate-in fade-in slide-in-from-top-4 duration-300">
-            <div className="flex items-center justify-between mb-6">
-              <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-indigo-400" />
-                Visitor Analytics
-              </h4>
-              <div className="flex items-center gap-2 bg-slate-950 rounded-lg px-3 py-1.5 border border-slate-800">
-                <Calendar className="w-4 h-4 text-slate-400" />
-                <select
-                  value={year}
-                  onChange={handleYearChange}
-                  className="bg-transparent text-sm text-white focus:outline-none appearance-none cursor-pointer pr-4"
-                >
-                  {years.map((y) => (
-                    <option key={y} value={y} className="bg-slate-900">
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {isLoadingStats && !stats ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
-              </div>
-            ) : stats ? (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
-                      Daily
-                    </p>
-                    <p className="text-2xl font-bold font-mono text-white">
-                      {stats.daily.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
-                      Weekly
-                    </p>
-                    <p className="text-2xl font-bold font-mono text-white">
-                      {stats.weekly.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
-                      Monthly
-                    </p>
-                    <p className="text-2xl font-bold font-mono text-white">
-                      {stats.monthly.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="text-center p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 hover:border-indigo-500/40 transition-colors relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-500/10 rounded-bl-full -mr-4 -mt-4" />
-                    <p className="text-xs text-indigo-400/80 uppercase tracking-wider mb-2 font-medium">
-                      Total
-                    </p>
-                    <p className="text-2xl font-bold font-mono text-indigo-400">
-                      {stats.total.toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="h-64 w-full pt-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={stats.chartData}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#334155"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="name"
-                        stroke="#64748b"
-                        fontSize={12}
-                        tickLine={false}
-                        axisLine={false}
-                        dy={10}
-                      />
-                      <YAxis
-                        stroke="#64748b"
-                        fontSize={12}
-                        tickLine={false}
-                        axisLine={false}
-                        tickFormatter={(value) =>
-                          value >= 1000
-                            ? `${(value / 1000).toFixed(1)}k`
-                            : value
-                        }
-                      />
-                      <Tooltip
-                        cursor={{ fill: "#1e293b" }}
-                        contentStyle={{
-                          backgroundColor: "#0f172a",
-                          borderColor: "#334155",
-                          borderRadius: "8px",
-                          color: "#f8fafc",
-                        }}
-                        itemStyle={{ color: "#818cf8", fontWeight: 600 }}
-                      />
-                      <Bar
-                        dataKey="visitors"
-                        fill="#6366f1"
-                        radius={[4, 4, 0, 0]}
-                        animationDuration={1000}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-    );
   };
 
   if (isLoading) {
@@ -471,11 +279,219 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {domains.map((domain) => (
-              <DomainCard key={domain.id} domain={domain} />
+              <DomainCard
+                key={domain.id}
+                domain={domain}
+                onDelete={handleDelete}
+              />
             ))}
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function DomainCard({
+  domain,
+  onDelete,
+}: {
+  domain: Domain;
+  onDelete: (id: number) => void;
+}) {
+  const [stats, setStats] = useState<import("../lib/types").Stats | null>(
+    null,
+  );
+  const [showStats, setShowStats] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) =>
+    (currentYear - i).toString(),
+  );
+  const [year, setYear] = useState<string>(currentYear.toString());
+
+  const fetchStats = async (selectedYear: string) => {
+    setIsLoadingStats(true);
+    try {
+      const res = await api.get(
+        `/stats/${domain.id}?year=${selectedYear}`,
+      );
+      setStats(res.data);
+    } catch {
+      console.error("Failed to load stats");
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+
+  const toggleStats = async () => {
+    if (!showStats && !stats) {
+      await fetchStats(year);
+    }
+    setShowStats(!showStats);
+  };
+
+  const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newYear = e.target.value;
+    setYear(newYear);
+    if (showStats) {
+      fetchStats(newYear);
+    }
+  };
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 transition-all hover:border-slate-700">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+            <Globe className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">
+              {domain.subdomain}
+            </h3>
+            <p className="text-sm text-slate-400">
+              Points to: {domain.hostname}:{domain.port}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleStats}
+            className={`p-2 rounded-lg transition-colors ${showStats ? "bg-indigo-500/20 text-indigo-400" : "text-slate-400 hover:text-indigo-400 bg-slate-800/50 hover:bg-slate-800"}`}
+          >
+            <Activity className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(domain.id)}
+            className="p-2 text-slate-400 hover:text-red-400 bg-slate-800/50 hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {showStats && (
+        <div className="mt-6 pt-6 border-t border-slate-800">
+          <div className="flex items-center justify-between mb-6">
+            <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-indigo-400" />
+              Visitor Analytics
+            </h4>
+            <div className="flex items-center gap-2 bg-slate-950 rounded-lg px-3 py-1.5 border border-slate-800">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <select
+                value={year}
+                onChange={handleYearChange}
+                className="bg-transparent text-sm text-white focus:outline-none appearance-none cursor-pointer pr-4"
+              >
+                {years.map((y) => (
+                  <option key={y} value={y} className="bg-slate-900">
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {isLoadingStats && !stats ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+            </div>
+          ) : stats ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
+                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
+                    Daily
+                  </p>
+                  <p className="text-2xl font-bold font-mono text-white">
+                    {stats.daily.toLocaleString()}
+                  </p>
+                </div>
+                <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
+                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
+                    Weekly
+                  </p>
+                  <p className="text-2xl font-bold font-mono text-white">
+                    {stats.weekly.toLocaleString()}
+                  </p>
+                </div>
+                <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
+                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
+                    Monthly
+                  </p>
+                  <p className="text-2xl font-bold font-mono text-white">
+                    {stats.monthly.toLocaleString()}
+                  </p>
+                </div>
+                <div className="text-center p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 hover:border-indigo-500/40 transition-colors relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-500/10 rounded-bl-full -mr-4 -mt-4" />
+                  <p className="text-xs text-indigo-400/80 uppercase tracking-wider mb-2 font-medium">
+                    Total
+                  </p>
+                  <p className="text-2xl font-bold font-mono text-indigo-400">
+                    {stats.total.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-64 w-full pt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={stats.chartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#334155"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="name"
+                      stroke="#64748b"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      dy={10}
+                    />
+                    <YAxis
+                      stroke="#64748b"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(value) =>
+                        value >= 1000
+                          ? `${(value / 1000).toFixed(1)}k`
+                          : value
+                      }
+                    />
+                    <Tooltip
+                      cursor={{ fill: "#1e293b" }}
+                      contentStyle={{
+                        backgroundColor: "#0f172a",
+                        borderColor: "#334155",
+                        borderRadius: "8px",
+                        color: "#f8fafc",
+                      }}
+                      itemStyle={{ color: "#818cf8", fontWeight: 600 }}
+                    />
+                    <Bar
+                      dataKey="visitors"
+                      fill="#6366f1"
+                      radius={[4, 4, 0, 0]}
+                      animationDuration={1000}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

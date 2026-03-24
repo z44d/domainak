@@ -1,5 +1,3 @@
-"use client";
-
 import {
   Ban,
   Loader2,
@@ -8,12 +6,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Navbar } from "@/components/Navbar";
-import { api } from "@/lib/api";
+import { Navbar } from "../components/Navbar";
+import { api } from "../lib/api";
+import type { Domain, User } from "../lib/types";
 
-export default function AdminDashboard() {
-  const [user, setUser] = useState<any>(null);
-  const [domains, setDomains] = useState<any[]>([]);
+export default function Admin() {
+  const [user, setUser] = useState<User | null>(null);
+  const [domains, setDomains] = useState<Domain[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [ipToBan, setIpToBan] = useState("");
   const [banReason, setBanReason] = useState("");
@@ -30,8 +29,11 @@ export default function AdminDashboard() {
 
       const res = await api.get("/admin/domains");
       setDomains(res.data.domains);
-    } catch (error: any) {
-      if (error.response?.status === 401) {
+    } catch (error: unknown) {
+      if (
+        (error as { response?: { status: number } })?.response?.status ===
+        401
+      ) {
         localStorage.removeItem("session_token");
         window.location.href = "/";
       }
@@ -49,7 +51,7 @@ export default function AdminDashboard() {
     try {
       await api.delete(`/admin/domains/${id}`);
       setDomains(domains.filter((d) => d.id !== id));
-    } catch (_error) {
+    } catch {
       alert("Failed to delete domain");
     }
   };
@@ -65,8 +67,8 @@ export default function AdminDashboard() {
         isBanned: !currentStatus,
       });
       alert(`User ${action}ned successfully`);
-      fetchData(); // Refresh to get updated status, though we don't have user ban status in domain list easily. Wait, we might need a separate users list, or just assume it works.
-    } catch (_error) {
+      fetchData();
+    } catch {
       alert(`Failed to ${action} user`);
     }
   };
@@ -80,8 +82,11 @@ export default function AdminDashboard() {
       alert("IP banned successfully");
       setIpToBan("");
       setBanReason("");
-    } catch (error: any) {
-      alert(error.response?.data?.error || "Failed to ban IP");
+    } catch (error: unknown) {
+      alert(
+        (error as { response?: { data?: { error: string } } })?.response
+          ?.data?.error || "Failed to ban IP",
+      );
     } finally {
       setIsBanningIp(false);
     }
@@ -115,7 +120,6 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Recent Domains */}
           <div className="lg:col-span-2 space-y-6">
             <h2 className="text-xl font-semibold text-white">
               Latest Domains
@@ -157,9 +161,14 @@ export default function AdminDashboard() {
                           <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() =>
-                                handleToggleUserBan(domain.user?.id, false)
-                              }
+                              onClick={() => {
+                                if (domain.user?.id != null) {
+                                  handleToggleUserBan(
+                                    domain.user.id,
+                                    false,
+                                  );
+                                }
+                              }}
                               title="Ban User"
                               className="p-2 text-slate-400 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors"
                             >
@@ -193,7 +202,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Ban IP Tool */}
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-white">
               Ban IP Address

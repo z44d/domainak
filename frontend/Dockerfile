@@ -1,17 +1,16 @@
-FROM oven/bun:1.3.11 AS base
+FROM oven/bun:1.3.11 AS build
 
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY . .
-
-# Expose URL config to NextJS build process
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-# Build the Next.js app
+ARG VITE_API_URL=http://localhost:2007/api
+ENV VITE_API_URL=$VITE_API_URL
 RUN bun run build
 
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 5173
-CMD ["bun", "run", "start"]
+CMD ["nginx", "-g", "daemon off;"]

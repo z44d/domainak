@@ -1,10 +1,9 @@
-"use client";
-
 import { LogOut, Settings } from "lucide-react";
-import Link from "next/link";
-import { api } from "@/lib/api";
+import { Link } from "react-router-dom";
+import { api } from "../lib/api";
+import type { User } from "../lib/types";
 
-export function Navbar({ user }: { user: any }) {
+export function Navbar({ user }: { user: User | null }) {
   const handleLogout = async () => {
     localStorage.removeItem("session_token");
     await api.post("/auth/logout");
@@ -15,7 +14,7 @@ export function Navbar({ user }: { user: any }) {
     <nav className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
       <div className="container mx-auto px-6 h-16 flex items-center justify-between">
         <Link
-          href="/dashboard"
+          to="/dashboard"
           className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent"
         >
           Domainak
@@ -25,7 +24,7 @@ export function Navbar({ user }: { user: any }) {
           <div className="flex items-center gap-6">
             {user.isAdmin && (
               <Link
-                href="/admin"
+                to="/admin"
                 className="text-sm font-medium text-slate-400 hover:text-white flex items-center gap-2 transition-colors"
               >
                 <Settings className="w-4 h-4" /> Admin

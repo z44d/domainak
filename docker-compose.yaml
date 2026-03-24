@@ -56,11 +56,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${BACKEND_URL:-http://localhost:2007/api}
+        - VITE_API_URL=${BACKEND_URL:-http://localhost:2007/api}
     ports:
       - "5173:5173"
-    environment:
-      - BACKEND_URL=${BACKEND_URL}
     networks:
       - domainak-net
 
