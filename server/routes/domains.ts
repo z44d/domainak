@@ -2,7 +2,11 @@ import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { redis } from "server/db/redis";
 import { db } from "../db";
-import { bannedIpsTable, domainTable } from "../db/schema";
+import {
+  bannedDomainsTable,
+  bannedIpsTable,
+  domainTable,
+} from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
 
 export const domainsRouter = new Hono<{ Variables: { user: any } }>();
@@ -31,7 +35,23 @@ domainsRouter.post("/", async (c) => {
   const user = c.get("user");
   const { subdomain, domain, hostname, port } = await c.req.json();
 
-  if (!subdomain || !domain || !hostname || !port) {
+  const sanitizedSubdomain = String(subdomain || "")
+    .trim()
+    .toLowerCase();
+  const sanitizedDomain = String(domain || "")
+    .trim()
+    .toLowerCase();
+  const sanitizedHostname = String(hostname || "")
+    .trim()
+    .toLowerCase();
+  const parsedPort = Number.parseInt(String(port || ""), 10);
+
+  if (
+    !sanitizedSubdomain ||
+    !sanitizedDomain ||
+    !sanitizedHostname ||
+    Number.isNaN(parsedPort)
+  ) {
     return c.json({ error: "Missing required fields" }, 400);
   }
 
@@ -39,17 +59,25 @@ domainsRouter.post("/", async (c) => {
   const availableDomains = process.env.DOMAINS
     ? process.env.DOMAINS.split(" ")
     : [];
-  if (!availableDomains.includes(domain)) {
+  if (!availableDomains.includes(sanitizedDomain)) {
     return c.json({ error: "Invalid base domain" }, 400);
   }
 
-  const fullSubdomain = `${subdomain}.${domain}`;
+  const fullSubdomain = `${sanitizedSubdomain}.${sanitizedDomain}`;
+
+  const bannedDomainCheck = await db
+    .select()
+    .from(bannedDomainsTable)
+    .where(eq(bannedDomainsTable.domain, fullSubdomain));
+  if (bannedDomainCheck.length > 0) {
+    return c.json({ error: "Domain is banned" }, 403);
+  }
 
   // Check if IP is banned
   const bannedIpCheck = await db
     .select()
     .from(bannedIpsTable)
-    .where(eq(bannedIpsTable.ip, hostname));
+    .where(eq(bannedIpsTable.ip, sanitizedHostname));
   if (bannedIpCheck.length > 0) {
     return c.json({ error: "IP Address is banned" }, 403);
   }
@@ -59,14 +87,14 @@ domainsRouter.post("/", async (c) => {
   }
 
   try {
-    await redis.set(fullSubdomain, `${hostname}:${port}`);
+    await redis.set(fullSubdomain, `${sanitizedHostname}:${parsedPort}`);
     const inserted = await db
       .insert(domainTable)
       .values({
         userId: user.id,
         subdomain: fullSubdomain,
-        hostname,
-        port: parseInt(port, 10),
+        hostname: sanitizedHostname,
+        port: parsedPort,
       })
       .returning();
 

@@ -12,18 +12,22 @@ services:
 
   openresty:
     image: openresty/openresty:alpine
+    restart: unless-stopped
     ports:
       - "2006:80"
     volumes:
       - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
     depends_on:
-      - redis
-      - backend
+      redis:
+        condition: service_started
+      backend:
+        condition: service_healthy
     networks:
       - domainak-net
 
   redis:
     image: redis:alpine
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     networks:
@@ -42,12 +46,23 @@ services:
       - REDIS_URL=redis://redis:6379
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - ADMIN_IDS=${ADMIN_IDS}
       - NODE_ENV=production
+      - PORT=2007
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:2007/').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - domainak-net
 
@@ -59,6 +74,7 @@ services:
         - VITE_API_URL=${BACKEND_URL:-http://localhost:2007/api}
     ports:
       - "5173:5173"
+    restart: unless-stopped
     networks:
       - domainak-net
 
@@ -69,6 +85,7 @@ services:
 
   db:
     image: postgres:alpine
+    restart: unless-stopped
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -77,7 +94,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_DB=${POSTGRES_DB}
-      - PGDATA=/var/lib/postgresql/data
+      - PGDATA=/var/lib/postgresql/data/pgdata
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
       interval: 5s

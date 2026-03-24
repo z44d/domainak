@@ -9,6 +9,17 @@ import { domainsRouter } from "./routes/domains";
 import { statsRouter } from "./routes/stats";
 
 const app = new Hono();
+const apiRouter = new Hono();
+
+function registerApiRoutes(router: Hono) {
+  router.route("/auth", authRouter);
+  router.route("/domains", domainsRouter);
+  router.route("/admin", adminRouter);
+  router.route("/stats", statsRouter);
+
+  router.get("/doc", (c) => c.json(openApiDoc));
+  router.get("/swagger", swaggerUI({ url: "/doc" }));
+}
 
 app.use(
   "*",
@@ -18,16 +29,15 @@ app.use(
   }),
 );
 
-app.route("/auth", authRouter);
-app.route("/domains", domainsRouter);
-app.route("/admin", adminRouter);
-app.route("/stats", statsRouter);
-
-// Swagger UI & OpenAPI docs
-app.get("/doc", (c) => c.json(openApiDoc));
-app.get("/swagger", swaggerUI({ url: "/doc" }));
+registerApiRoutes(app);
+registerApiRoutes(apiRouter);
+app.route("/api", apiRouter);
 
 app.get("/", (c) => {
+  return c.json({ message: "Domainak API is running" });
+});
+
+app.get("/api", (c) => {
   return c.json({ message: "Domainak API is running" });
 });
 
