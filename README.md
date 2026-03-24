@@ -155,6 +155,23 @@ For most UI and API work, this is not required.
 
 These steps assume Ubuntu 24.04, a clean server, and Cloudflare-managed DNS.
 
+### Quick installer
+
+If Docker is already installed, you can use the guided installer instead of setting everything up manually:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/z44d/domainak/main/setup.sh | bash
+```
+
+What it does:
+
+- asks for all required environment variables in an interactive terminal UI
+- stores them in `~/.domainak/.env`
+- downloads `docker-compose.yaml` and `nginx.conf` into `~/.domainak`
+- starts or updates the stack with Docker Compose
+
+If `~/.domainak/.env` already exists, the installer switches to update mode and pre-fills your current values.
+
 ### 1. Install Docker
 
 ```bash

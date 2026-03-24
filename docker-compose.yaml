@@ -34,15 +34,15 @@ services:
       - domainak-net
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-z44d}/domainak-server:${DOMAINAK_IMAGE_TAG:-latest}
+    pull_policy: always
     ports:
       - "2007:2007"
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_URL=${POSTGRES_URL}
       - REDIS_URL=redis://redis:6379
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
@@ -67,11 +67,8 @@ services:
       - domainak-net
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=${BACKEND_URL:-http://localhost:2007/api}
+    image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-z44d}/domainak-static:${DOMAINAK_IMAGE_TAG:-latest}
+    pull_policy: always
     ports:
       - "5173:5173"
     restart: unless-stopped
