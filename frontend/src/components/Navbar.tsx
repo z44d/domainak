@@ -1,59 +1,101 @@
 import { LogOut, Settings } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import type { User } from "../lib/types";
+import { getErrorMessage } from "../lib/utils";
 
 export function Navbar({ user }: { user: User | null }) {
+  const navigate = useNavigate();
+  const [logoutError, setLogoutError] = useState("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const handleLogout = async () => {
-    localStorage.removeItem("session_token");
-    await api.post("/auth/logout");
-    window.location.href = "/";
+    setLogoutError("");
+    setIsLoggingOut(true);
+
+    try {
+      await api.post("/auth/logout");
+    } catch (error: unknown) {
+      setLogoutError(
+        getErrorMessage(
+          error,
+          "We could not reach the server, but you can still leave this session.",
+        ),
+      );
+    } finally {
+      localStorage.removeItem("session_token");
+      navigate("/");
+      setIsLoggingOut(false);
+    }
   };
 
   return (
-    <nav className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50">
-      <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-        <Link
-          to="/dashboard"
-          className="text-xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent"
-        >
-          Domainak
+    <nav className="site-nav" aria-label="Primary">
+      <div className="site-nav__inner">
+        <Link to="/dashboard" className="brand-link">
+          <span className="brand-link__mark">Domainak</span>
+          <span className="brand-link__meta">routing control</span>
         </Link>
 
         {user && (
-          <div className="flex items-center gap-6">
+          <div className="nav-actions">
             {user.isAdmin && (
-              <Link
-                to="/admin"
-                className="text-sm font-medium text-slate-400 hover:text-white flex items-center gap-2 transition-colors"
-              >
+              <Link to="/admin" className="button button-ghost">
                 <Settings className="w-4 h-4" /> Admin
               </Link>
             )}
 
-            <div className="flex items-center gap-4 pl-6 border-l border-slate-800">
-              <div className="flex items-center gap-2">
+            <div className="nav-user">
+              <div className="user-pill">
                 <img
                   src={`https://avatars.githubusercontent.com/u/${user.githubId}?v=4`}
                   alt={user.name}
-                  className="w-8 h-8 rounded-full border border-slate-700"
+                  className="avatar"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
                 />
-                <span className="text-sm font-medium text-slate-300 hidden sm:block">
-                  {user.name}
+                <span className="user-pill__text">
+                  <span
+                    className="user-pill__label text-truncate"
+                    dir="auto"
+                    title={user.name}
+                  >
+                    {user.name}
+                  </span>
+                  <span
+                    className="user-pill__meta text-truncate"
+                    dir="auto"
+                    title={user.email}
+                  >
+                    {user.email}
+                  </span>
                 </span>
               </div>
               <button
                 onClick={handleLogout}
                 type="button"
-                className="p-2 text-slate-400 hover:text-red-400 transition-colors"
-                title="Logout"
+                className="button button-ghost"
+                aria-label="Log out"
+                disabled={isLoggingOut}
               >
                 <LogOut className="w-4 h-4" />
+                {isLoggingOut ? "Leaving..." : "Log out"}
               </button>
             </div>
           </div>
         )}
       </div>
+      {logoutError ? (
+        <div className="site-nav__inner site-nav__feedback">
+          <div
+            className="status-banner status-banner--danger"
+            role="alert"
+          >
+            <span>{logoutError}</span>
+          </div>
+        </div>
+      ) : null}
     </nav>
   );
 }

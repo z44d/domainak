@@ -7,21 +7,27 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useNavigate } from "react-router-dom";
 import { Navbar } from "../components/Navbar";
 import { api } from "../lib/api";
-import type { Domain, User } from "../lib/types";
+import type { Domain, Stats, User } from "../lib/types";
+import { formatNumber, getErrorMessage } from "../lib/utils";
+
+const DomainStatsChart = lazy(
+  () => import("../components/DomainStatsChart"),
+);
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [domains, setDomains] = useState<Domain[]>([]);
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
@@ -35,49 +41,117 @@ export default function Dashboard() {
     port: "",
   });
   const [addError, setAddError] = useState("");
+  const [pageError, setPageError] = useState("");
+  const [feedback, setFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const feedbackTimeoutRef = useRef<number | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const { data: userData } = await api.get("/auth/me");
-      setUser(userData);
-
-      const [domainsRes, availableRes] = await Promise.all([
-        api.get("/domains"),
-        api.get("/domains/available"),
-      ]);
-
-      setDomains(domainsRes.data.domains);
-      setAvailableDomains(availableRes.data.available);
-      if (availableRes.data.available.length > 0) {
-        setFormData((prev) => ({
-          ...prev,
-          domain: availableRes.data.available[0],
-        }));
-      }
-    } catch (error: unknown) {
-      if (
-        (error as { response?: { status: number } })?.response?.status ===
-        401
-      ) {
-        localStorage.removeItem("session_token");
-        window.location.href = "/";
-      }
-    } finally {
-      setIsLoading(false);
+  const setTransientFeedback = useCallback((message: string) => {
+    setFeedback(message);
+    if (feedbackTimeoutRef.current) {
+      window.clearTimeout(feedbackTimeoutRef.current);
     }
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setFeedback("");
+      feedbackTimeoutRef.current = null;
+    }, 4000);
   }, []);
 
+  const fetchData = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setPageError("");
+        const { data: userData } = await api.get("/auth/me", { signal });
+        setUser(userData);
+
+        const [domainsRes, availableRes] = await Promise.all([
+          api.get("/domains", { signal }),
+          api.get("/domains/available", { signal }),
+        ]);
+
+        setDomains(domainsRes.data.domains);
+        setAvailableDomains(availableRes.data.available);
+        if (availableRes.data.available.length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            domain: availableRes.data.available[0],
+          }));
+        }
+      } catch (error: unknown) {
+        if (
+          (error as { response?: { status: number } })?.response
+            ?.status === 401
+        ) {
+          localStorage.removeItem("session_token");
+          navigate("/", { replace: true });
+        } else if (!signal?.aborted) {
+          setPageError(
+            getErrorMessage(
+              error,
+              "We could not load your workspace right now.",
+            ),
+          );
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [navigate],
+  );
+
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+
+    return () => {
+      controller.abort();
+      if (feedbackTimeoutRef.current) {
+        window.clearTimeout(feedbackTimeoutRef.current);
+      }
+    };
   }, [fetchData]);
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError("");
+    setFeedback("");
+
+    const trimmedSubdomain = formData.subdomain.trim();
+    const trimmedHostname = formData.hostname.trim();
+    const parsedPort = Number(formData.port);
+
+    if (!trimmedSubdomain || !trimmedHostname) {
+      setAddError("Enter a subdomain and destination host to continue.");
+      return;
+    }
+
+    if (trimmedSubdomain.length < 2) {
+      setAddError("Use at least 2 characters for the subdomain.");
+      return;
+    }
+
+    if (Number.isNaN(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      setAddError("Use a port between 1 and 65535.");
+      return;
+    }
+
+    if (!formData.domain) {
+      setAddError("There are no available domain suffixes right now.");
+      return;
+    }
+
     setIsSubmitting(true);
+
     try {
-      await api.post("/domains", formData);
+      await api.post("/domains", {
+        ...formData,
+        subdomain: trimmedSubdomain,
+        hostname: trimmedHostname,
+        port: parsedPort.toString(),
+      });
       setShowAddForm(false);
       setFormData({
         subdomain: "",
@@ -85,11 +159,11 @@ export default function Dashboard() {
         hostname: "",
         port: "",
       });
+      setTransientFeedback("Domain registered successfully.");
       fetchData();
     } catch (error: unknown) {
       setAddError(
-        (error as { response?: { data?: { error: string } } })?.response
-          ?.data?.error || "Failed to add domain",
+        getErrorMessage(error, "We could not register that domain yet."),
       );
     } finally {
       setIsSubmitting(false);
@@ -97,75 +171,133 @@ export default function Dashboard() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this domain?")) return;
+    setFeedback("");
+    setDeletingId(id);
     try {
       await api.delete(`/domains/${id}`);
-      setDomains(domains.filter((d) => d.id !== id));
-    } catch {
-      alert("Failed to delete domain");
+      setDomains(domains.filter((domain) => domain.id !== id));
+      setTransientFeedback("Domain removed from your workspace.");
+    } catch (error: unknown) {
+      setFeedback(
+        getErrorMessage(error, "We could not remove that domain."),
+      );
+    } finally {
+      setDeletingId(null);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      <div className="loading-screen" aria-live="polite" aria-busy="true">
+        <div className="loading-stack">
+          <div className="spinner" aria-hidden="true" />
+          <p>Loading your domains...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="app-shell">
       <Navbar user={user} />
 
-      <main className="container mx-auto px-6 py-12 max-w-5xl">
-        <div className="flex items-center justify-between mb-8">
+      <main className="app-main stack-lg">
+        <header className="page-header page-header--split surface-enter">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">
-              Your Domains
-            </h1>
-            <p className="text-slate-400">
-              Manage your connected subdomains and view traffic analytics.
+            <div className="eyebrow">Workspace</div>
+            <h1 className="page-title page-title--compact">Domains</h1>
+            <p className="page-copy">
+              Register a destination, review traffic only when you need it,
+              and keep the day-to-day workspace focused on routing
+              decisions.
             </p>
           </div>
+
           <button
             type="button"
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors font-medium"
+            onClick={() => setShowAddForm((current) => !current)}
+            className="button button-primary"
           >
-            <Plus className="w-4 h-4" /> Add Domain
+            <Plus className="w-4 h-4" />
+            {showAddForm ? "Hide form" : "New domain"}
           </button>
-        </div>
+        </header>
 
-        {showAddForm && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-8 animate-fade-in shadow-xl shadow-black/50">
-            <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-indigo-400" /> Register New
-              Subdomain
-            </h2>
+        {pageError ? (
+          <section className="panel surface-enter">
+            <div
+              className="status-banner status-banner--danger"
+              role="alert"
+            >
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="stack-sm">
+                <strong>Workspace unavailable</strong>
+                <span>{pageError}</span>
+              </div>
+            </div>
+            <div className="panel-actions mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLoading(true);
+                  fetchData();
+                }}
+                className="button button-secondary"
+              >
+                Try again
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {feedback ? (
+          <div className="status-banner" role="status" aria-live="polite">
+            <span>{feedback}</span>
+          </div>
+        ) : null}
+
+        {!pageError && showAddForm && (
+          <section className="panel panel--soft surface-enter">
+            <div className="panel__header">
+              <p className="eyebrow">Create route</p>
+              <h2 className="panel__title">Register a new subdomain</h2>
+              <p className="panel__copy">
+                Use the same format every time: choose a name, confirm the
+                suffix, and point it at the host that should receive
+                traffic.
+              </p>
+            </div>
 
             {addError && (
-              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <p className="text-sm">{addError}</p>
+              <div
+                className="status-banner status-banner--danger"
+                role="alert"
+              >
+                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{addError}</span>
               </div>
             )}
 
-            <form onSubmit={handleAddSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label
-                    htmlFor="subdomainInput"
-                    className="text-sm font-medium text-slate-300"
-                  >
+            <form onSubmit={handleAddSubmit} className="field-grid mt-6">
+              <div className="field-grid field-grid--two">
+                <div className="field">
+                  <label htmlFor="subdomainInput" className="field-label">
                     Subdomain
                   </label>
-                  <div className="flex rounded-lg shadow-sm">
+                  <span className="field-hint">
+                    Keep it short and easy to recognize.
+                  </span>
+                  <div className="split-field">
                     <input
                       id="subdomainInput"
                       type="text"
                       required
-                      placeholder="e.g. my-app"
+                      minLength={2}
+                      maxLength={63}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder="my-app"
                       value={formData.subdomain}
                       onChange={(e) =>
                         setFormData({
@@ -175,39 +307,46 @@ export default function Dashboard() {
                             .replace(/[^a-z0-9-]/g, ""),
                         })
                       }
-                      className="flex-1 bg-slate-950 border border-slate-800 rounded-l-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                      className="text-field"
                     />
                     <select
+                      aria-label="Available domain suffix"
                       value={formData.domain}
+                      disabled={availableDomains.length === 0}
                       onChange={(e) =>
                         setFormData({
                           ...formData,
                           domain: e.target.value,
                         })
                       }
-                      className="bg-slate-800 border-y border-r border-slate-700 rounded-r-lg px-4 py-2.5 text-slate-300 focus:outline-none"
+                      className="select-field"
                     >
-                      {availableDomains.map((d) => (
-                        <option key={d} value={d}>
-                          .{d}
+                      {availableDomains.map((domain) => (
+                        <option key={domain} value={domain}>
+                          .{domain}
                         </option>
                       ))}
                     </select>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label
-                    htmlFor="hostnameInput"
-                    className="text-sm font-medium text-slate-300"
-                  >
-                    Destination IP / Hostname
+                <div className="field">
+                  <label htmlFor="hostnameInput" className="field-label">
+                    Destination host
                   </label>
+                  <span className="field-hint">
+                    IP address, hostname, or tunnel endpoint.
+                  </span>
                   <input
                     id="hostnameInput"
                     type="text"
                     required
-                    placeholder="e.g. 192.168.1.5 or my.tunnel.com"
+                    maxLength={255}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    dir="auto"
+                    placeholder="192.168.1.5 or app.example.net"
                     value={formData.hostname}
                     onChange={(e) =>
                       setFormData({
@@ -215,111 +354,141 @@ export default function Dashboard() {
                         hostname: e.target.value,
                       })
                     }
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                    className="text-field"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label
-                    htmlFor="portInput"
-                    className="text-sm font-medium text-slate-300"
-                  >
-                    Destination Port
+                <div className="field">
+                  <label htmlFor="portInput" className="field-label">
+                    Destination port
                   </label>
+                  <span className="field-hint">
+                    Enter the service port that should receive requests.
+                  </span>
                   <input
                     id="portInput"
                     type="number"
                     required
+                    inputMode="numeric"
                     min={1}
                     max={65535}
-                    placeholder="e.g. 8080"
+                    placeholder="8080"
                     value={formData.port}
                     onChange={(e) =>
                       setFormData({ ...formData, port: e.target.value })
                     }
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                    className="text-field"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-4 pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="px-6 py-2.5 text-slate-300 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-medium rounded-lg transition-all disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : null}
-                  Register Subdomain
-                </button>
+              <div className="subtle-row">
+                <p className="field-hint">
+                  {availableDomains.length > 0
+                    ? "Changes take effect immediately after registration."
+                    : "No domain suffixes are available right now."}
+                </p>
+                <div className="nav-actions">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="button button-ghost"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      isSubmitting || availableDomains.length === 0
+                    }
+                    className="button button-primary"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : null}
+                    Register domain
+                  </button>
+                </div>
               </div>
             </form>
-          </div>
+          </section>
         )}
 
-        {domains.length === 0 ? (
-          <div className="text-center py-20 border border-slate-800 border-dashed rounded-2xl bg-slate-900/20">
-            <Globe className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-slate-300 mb-2">
-              No domains yet
-            </h3>
-            <p className="text-slate-500 max-w-sm mx-auto">
-              You haven't registered any subdomains yet. Click the button
-              above to get started.
+        {!pageError && domains.length === 0 ? (
+          <section className="empty-panel surface-enter">
+            <div className="eyebrow">
+              <Globe className="w-4 h-4" /> Empty workspace
+            </div>
+            <h2 className="empty-panel__title">No routes yet</h2>
+            <p className="empty-panel__copy">
+              Start by registering a subdomain, then point it at the
+              service or tunnel you want to expose.
             </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              className="button button-secondary"
+            >
+              Register your first domain
+            </button>
+          </section>
+        ) : !pageError ? (
+          <section className="domains-list surface-enter">
             {domains.map((domain) => (
-              <DomainCard
+              <DomainRow
                 key={domain.id}
                 domain={domain}
                 onDelete={handleDelete}
+                isDeleting={deletingId === domain.id}
               />
             ))}
-          </div>
-        )}
+          </section>
+        ) : null}
       </main>
     </div>
   );
 }
 
-function DomainCard({
+function DomainRow({
   domain,
   onDelete,
+  isDeleting,
 }: {
   domain: Domain;
   onDelete: (id: number) => void;
+  isDeleting: boolean;
 }) {
-  const [stats, setStats] = useState<import("../lib/types").Stats | null>(
-    null,
-  );
+  const [stats, setStats] = useState<Stats | null>(null);
   const [showStats, setShowStats] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [statsError, setStatsError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) =>
-    (currentYear - i).toString(),
+  const years = useMemo(
+    () =>
+      Array.from({ length: 5 }, (_, index) =>
+        (currentYear - index).toString(),
+      ),
+    [currentYear],
   );
-  const [year, setYear] = useState<string>(currentYear.toString());
+  const [year, setYear] = useState(currentYear.toString());
 
   const fetchStats = async (selectedYear: string) => {
     setIsLoadingStats(true);
+    setStatsError("");
     try {
       const res = await api.get(
         `/stats/${domain.id}?year=${selectedYear}`,
       );
       setStats(res.data);
-    } catch {
-      console.error("Failed to load stats");
+    } catch (error: unknown) {
+      setStatsError(
+        getErrorMessage(
+          error,
+          "We could not load analytics for this route.",
+        ),
+      );
     } finally {
       setIsLoadingStats(false);
     }
@@ -329,169 +498,209 @@ function DomainCard({
     if (!showStats && !stats) {
       await fetchStats(year);
     }
-    setShowStats(!showStats);
+    setShowStats((current) => !current);
   };
 
   const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newYear = e.target.value;
-    setYear(newYear);
+    const nextYear = e.target.value;
+    setYear(nextYear);
     if (showStats) {
-      fetchStats(newYear);
+      fetchStats(nextYear);
     }
   };
 
   return (
-    <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 transition-all hover:border-slate-700">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
-            <Globe className="w-5 h-5" />
+    <article className="domain-row">
+      <div className="domain-row__top">
+        <div className="domain-row__identity">
+          <div className="eyebrow">
+            <Globe className="w-4 h-4" /> Active route
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-white">
-              {domain.subdomain}
-            </h3>
-            <p className="text-sm text-slate-400">
-              Points to: {domain.hostname}:{domain.port}
-            </p>
-          </div>
+          <h2 className="domain-row__name text-wrap-anywhere" dir="auto">
+            {domain.subdomain}
+          </h2>
+          <p className="domain-row__meta text-wrap-anywhere" dir="auto">
+            Traffic is sent to {domain.hostname}:{domain.port}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="nav-actions">
           <button
             type="button"
             onClick={toggleStats}
-            className={`p-2 rounded-lg transition-colors ${showStats ? "bg-indigo-500/20 text-indigo-400" : "text-slate-400 hover:text-indigo-400 bg-slate-800/50 hover:bg-slate-800"}`}
+            className={`button ${showStats ? "button-secondary" : "button-ghost"}`}
+            aria-expanded={showStats}
+            disabled={isDeleting}
           >
             <Activity className="w-4 h-4" />
+            {showStats ? "Hide analytics" : "View analytics"}
           </button>
-          <button
-            type="button"
-            onClick={() => onDelete(domain.id)}
-            className="p-2 text-slate-400 hover:text-red-400 bg-slate-800/50 hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {confirmDelete ? (
+            <div
+              className="confirm-actions"
+              role="group"
+              aria-label="Confirm domain removal"
+            >
+              <button
+                type="button"
+                onClick={() => onDelete(domain.id)}
+                className="button button-danger"
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                Confirm remove
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="button button-ghost"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="button button-danger"
+              disabled={isDeleting}
+            >
+              <Trash2 className="w-4 h-4" /> Remove
+            </button>
+          )}
         </div>
       </div>
 
       {showStats && (
-        <div className="mt-6 pt-6 border-t border-slate-800">
-          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-indigo-400" />
-              Visitor Analytics
-            </h4>
-            <div className="flex items-center gap-2 bg-slate-950 rounded-lg px-3 py-1.5 border border-slate-800">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <select
-                value={year}
-                onChange={handleYearChange}
-                className="bg-transparent text-sm text-white focus:outline-none appearance-none cursor-pointer pr-4"
-              >
-                {years.map((y) => (
-                  <option key={y} value={y} className="bg-slate-900">
-                    {y}
-                  </option>
-                ))}
-              </select>
+        <section className="chart-shell surface-enter">
+          <div className="subtle-row">
+            <div>
+              <div className="eyebrow">
+                <Activity className="w-4 h-4" /> Traffic review
+              </div>
+              <p className="page-copy text-wrap-balance">
+                Open yearly traffic only when you need it. The default view
+                keeps the main list easier to scan.
+              </p>
+            </div>
+
+            <div className="field">
+              <label htmlFor={`year-${domain.id}`} className="field-label">
+                Year
+              </label>
+              <div className="split-field">
+                <span className="text-field flex items-center gap-2">
+                  <Calendar className="w-4 h-4" /> Reporting period
+                </span>
+                <select
+                  id={`year-${domain.id}`}
+                  value={year}
+                  onChange={handleYearChange}
+                  className="select-field"
+                >
+                  {years.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          {isLoadingStats && !stats ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+          {statsError ? (
+            <div
+              className="status-banner status-banner--danger"
+              role="alert"
+            >
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <div className="stack-sm">
+                <span>{statsError}</span>
+                <button
+                  type="button"
+                  onClick={() => fetchStats(year)}
+                  className="button button-ghost"
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          ) : isLoadingStats && !stats ? (
+            <div className="loading-stack py-8" aria-live="polite">
+              <div className="spinner" aria-hidden="true" />
+              <p>Loading analytics...</p>
             </div>
           ) : stats ? (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
-                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
-                    Daily
-                  </p>
-                  <p className="text-2xl font-bold font-mono text-white">
-                    {stats.daily.toLocaleString()}
-                  </p>
-                </div>
-                <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
-                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
-                    Weekly
-                  </p>
-                  <p className="text-2xl font-bold font-mono text-white">
-                    {stats.weekly.toLocaleString()}
-                  </p>
-                </div>
-                <div className="text-center p-4 bg-slate-950/50 rounded-xl border border-slate-800/50 hover:border-indigo-500/30 transition-colors">
-                  <p className="text-xs text-slate-500 uppercase tracking-wider mb-2 font-medium">
-                    Monthly
-                  </p>
-                  <p className="text-2xl font-bold font-mono text-white">
-                    {stats.monthly.toLocaleString()}
-                  </p>
-                </div>
-                <div className="text-center p-4 bg-indigo-500/10 rounded-xl border border-indigo-500/20 hover:border-indigo-500/40 transition-colors relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-500/10 rounded-bl-full -mr-4 -mt-4" />
-                  <p className="text-xs text-indigo-400/80 uppercase tracking-wider mb-2 font-medium">
-                    Total
-                  </p>
-                  <p className="text-2xl font-bold font-mono text-indigo-400">
-                    {stats.total.toLocaleString()}
-                  </p>
-                </div>
+            <div className="stack-lg">
+              <div className="metric-grid">
+                <MetricCard
+                  label="Daily"
+                  value={formatNumber(stats.daily)}
+                />
+                <MetricCard
+                  label="Weekly"
+                  value={formatNumber(stats.weekly)}
+                />
+                <MetricCard
+                  label="Monthly"
+                  value={formatNumber(stats.monthly)}
+                />
+                <MetricCard
+                  label="Year total"
+                  value={formatNumber(stats.total)}
+                  accent
+                />
               </div>
 
-              <div className="h-64 w-full pt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={stats.chartData}
-                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              <div className="panel">
+                <div className="panel__header">
+                  <h3 className="panel__title">Monthly visitors</h3>
+                  <p className="panel__copy">
+                    A compact view of traffic over the selected year.
+                  </p>
+                </div>
+                <div className="h-64 w-full">
+                  <Suspense
+                    fallback={
+                      <div
+                        className="loading-stack h-full"
+                        aria-live="polite"
+                      >
+                        <div className="spinner" aria-hidden="true" />
+                        <p>Preparing chart...</p>
+                      </div>
+                    }
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#334155"
-                      vertical={false}
-                    />
-                    <XAxis
-                      dataKey="name"
-                      stroke="#64748b"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      dy={10}
-                    />
-                    <YAxis
-                      stroke="#64748b"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) =>
-                        value >= 1000
-                          ? `${(value / 1000).toFixed(1)}k`
-                          : value
-                      }
-                    />
-                    <Tooltip
-                      cursor={{ fill: "#1e293b" }}
-                      contentStyle={{
-                        backgroundColor: "#0f172a",
-                        borderColor: "#334155",
-                        borderRadius: "8px",
-                        color: "#f8fafc",
-                      }}
-                      itemStyle={{ color: "#818cf8", fontWeight: 600 }}
-                    />
-                    <Bar
-                      dataKey="visitors"
-                      fill="#6366f1"
-                      radius={[4, 4, 0, 0]}
-                      animationDuration={1000}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                    <DomainStatsChart chartData={stats.chartData} />
+                  </Suspense>
+                </div>
               </div>
             </div>
           ) : null}
-        </div>
+        </section>
       )}
+    </article>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className={`metric-card${accent ? " metric-card--accent" : ""}`}>
+      <span className="metric-label">{label}</span>
+      <span className="metric-value">{value}</span>
     </div>
   );
 }
