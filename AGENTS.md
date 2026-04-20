@@ -151,7 +151,7 @@ Frontend `eslint.config.js` additionally enforces:
 
 ## Config and Deployment
 - Backend env handling is centralized in `server/config.ts`.
-- Frontend API base URL comes from `import.meta.env.VITE_API_URL`.
+- Frontend API base URL comes from `import.meta.env.VITE_API_URL`, which deployment currently feeds from `BACKEND_URL` during the frontend image build.
 - `docker-compose.yaml` builds local backend/frontend images and tags them with the GHCR image names.
 - `setup.sh` writes deployment env vars into `~/.domainak/.env`.
 - `setup.sh` downloads `docker-compose.yaml` and `nginx.conf` into `~/.domainak`.

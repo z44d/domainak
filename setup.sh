@@ -233,6 +233,7 @@ $(write_env_line GITHUB_CLIENT_ID "$GITHUB_CLIENT_ID")
 $(write_env_line GITHUB_CLIENT_SECRET "$GITHUB_CLIENT_SECRET")
 $(write_env_line ADMIN_IDS "$ADMIN_IDS")
 $(write_env_line BACKEND_URL "$BACKEND_URL")
+$(write_env_line VITE_API_URL "$BACKEND_URL")
 $(write_env_line FRONTEND_URL "$FRONTEND_URL")
 $(write_env_line JWT_SECRET "$JWT_SECRET")
 EOF

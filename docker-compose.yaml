@@ -34,8 +34,6 @@ services:
       - domainak-net
 
   backend:
-    build:
-      context: .
     image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-z44d}/domainak-server:${DOMAINAK_IMAGE_TAG:-latest}
     ports:
       - "2007:2007"
@@ -68,10 +66,6 @@ services:
       - domainak-net
 
   frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: ${VITE_API_URL:-/api}
     image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-z44d}/domainak-static:${DOMAINAK_IMAGE_TAG:-latest}
     ports:
       - "5173:5173"
