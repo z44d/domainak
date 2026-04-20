@@ -47,6 +47,7 @@ services:
       - DOMAINS=${DOMAINS:-domainak.com}
       - JWT_SECRET=${JWT_SECRET}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
+      - VITE_API_URL=${VITE_API_URL:http://localhost:2007/api}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - ADMIN_IDS=${ADMIN_IDS}
@@ -68,6 +69,8 @@ services:
 
   frontend:
     image: ${GHCR_REGISTRY:-ghcr.io}/${GHCR_OWNER:-z44d}/domainak-static:${DOMAINAK_IMAGE_TAG:-latest}
+    environment:
+      - VITE_API_URL=${VITE_API_URL:http://localhost:2007/api}
     pull_policy: always
     ports:
       - "5173:5173"
