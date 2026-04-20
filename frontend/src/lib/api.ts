@@ -23,13 +23,25 @@ type MutationOptions = RequestOptions & {
 
 type JsonBody = Record<string, unknown> | Array<unknown>;
 
-const baseURL =
-  import.meta.env.VITE_API_URL || "http://localhost:2007/api";
+const configuredBaseUrl =
+  import.meta.env.VITE_API_URL?.trim() || "/api";
+
+function getRequestBaseUrl() {
+  if (
+    configuredBaseUrl.startsWith("http://") ||
+    configuredBaseUrl.startsWith("https://")
+  ) {
+    return configuredBaseUrl;
+  }
+
+  return new URL(configuredBaseUrl, window.location.origin).toString();
+}
 
 function buildUrl(path: string, params?: RequestOptions["params"]) {
+  const baseUrl = getRequestBaseUrl();
   const url = new URL(
     path,
-    `${baseURL.endsWith("/") ? baseURL : `${baseURL}/`}`,
+    `${baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`}`,
   );
 
   if (params) {

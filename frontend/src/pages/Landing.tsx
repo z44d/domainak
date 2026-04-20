@@ -34,7 +34,7 @@ export default function Landing() {
   }, [navigate]);
 
   const handleLogin = () => {
-    window.location.href = `${import.meta.env.VITE_API_URL || "http://localhost:2007/api"}/auth/github`;
+    window.location.href = `${import.meta.env.VITE_API_URL?.trim() || "/api"}/auth/github`;
   };
 
   return (
