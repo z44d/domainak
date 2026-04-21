@@ -23,7 +23,7 @@ services:
       domainak:
         condition: service_started
       domainak-server:
-        condition: service_healthy
+        condition: service_started
     networks:
       - domainak-net
 
@@ -57,11 +57,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2007/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - domainak-net
 
@@ -70,7 +65,7 @@ services:
     restart: unless-stopped
     depends_on:
       domainak-server:
-        condition: service_healthy
+        condition: service_started
     networks:
       - domainak-net
 
