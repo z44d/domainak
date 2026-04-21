@@ -21,7 +21,7 @@ services:
       redis:
         condition: service_started
       domainak:
-        condition: service_healthy
+        condition: service_started
       domainak-server:
         condition: service_healthy
     networks:
@@ -58,7 +58,7 @@ services:
       redis:
         condition: service_started
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:2007/').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2007/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
