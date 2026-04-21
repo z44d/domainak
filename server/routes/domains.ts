@@ -33,7 +33,8 @@ domainsRouter.get("/", async (c) => {
 // Add a new subdomain
 domainsRouter.post("/", async (c) => {
   const user = c.get("user");
-  const { subdomain, domain, hostname, port } = await c.req.json();
+  const { subdomain, domain, hostname, port, targetUrl, mode } =
+    await c.req.json();
 
   const sanitizedSubdomain = String(subdomain || "")
     .trim()
@@ -45,17 +46,38 @@ domainsRouter.post("/", async (c) => {
     .trim()
     .toLowerCase();
   const parsedPort = Number.parseInt(String(port || ""), 10);
+  const sanitizedTargetUrl = String(targetUrl || "").trim();
+  const sanitizedMode = mode === "redirect" ? "redirect" : "proxy";
 
-  if (
-    !sanitizedSubdomain ||
-    !sanitizedDomain ||
-    !sanitizedHostname ||
-    Number.isNaN(parsedPort)
-  ) {
+  if (!sanitizedSubdomain || !sanitizedDomain) {
     return c.json({ error: "Missing required fields" }, 400);
   }
 
-  // Validate base domain
+  if (
+    !sanitizedTargetUrl &&
+    (!sanitizedHostname || Number.isNaN(parsedPort))
+  ) {
+    return c.json(
+      { error: "Missing target: provide hostname/port or targetUrl" },
+      400,
+    );
+  }
+
+  if (sanitizedTargetUrl) {
+    try {
+      const urlObj = new URL(sanitizedTargetUrl);
+      if (!["http:", "https:"].includes(urlObj.protocol)) {
+        return c.json({ error: "Invalid URL protocol" }, 400);
+      }
+    } catch {
+      return c.json({ error: "Invalid targetUrl format" }, 400);
+    }
+  }
+
+  if (sanitizedMode === "redirect" && !sanitizedTargetUrl) {
+    return c.json({ error: "Redirect mode requires targetUrl" }, 400);
+  }
+
   const availableDomains = process.env.DOMAINS
     ? process.env.DOMAINS.split(" ")
     : [];
@@ -73,13 +95,14 @@ domainsRouter.post("/", async (c) => {
     return c.json({ error: "Domain is banned" }, 403);
   }
 
-  // Check if IP is banned
-  const bannedIpCheck = await db
-    .select()
-    .from(bannedIpsTable)
-    .where(eq(bannedIpsTable.ip, sanitizedHostname));
-  if (bannedIpCheck.length > 0) {
-    return c.json({ error: "IP Address is banned" }, 403);
+  if (!sanitizedTargetUrl && sanitizedHostname) {
+    const bannedIpCheck = await db
+      .select()
+      .from(bannedIpsTable)
+      .where(eq(bannedIpsTable.ip, sanitizedHostname));
+    if (bannedIpCheck.length > 0) {
+      return c.json({ error: "IP Address is banned" }, 403);
+    }
   }
 
   if (await redis.exists(fullSubdomain)) {
@@ -87,6 +110,34 @@ domainsRouter.post("/", async (c) => {
   }
 
   try {
+    if (sanitizedTargetUrl) {
+      const urlObj = new URL(sanitizedTargetUrl);
+      const targetHostname = urlObj.hostname;
+      const targetPort =
+        urlObj.port || (urlObj.protocol === "https:" ? 443 : 80);
+      const isRedirect = sanitizedMode === "redirect";
+
+      if (isRedirect) {
+        await redis.set(fullSubdomain, `r:${sanitizedTargetUrl}`);
+      } else {
+        await redis.set(fullSubdomain, `${targetHostname}:${targetPort}`);
+      }
+
+      const inserted = await db
+        .insert(domainTable)
+        .values({
+          userId: user.id,
+          subdomain: fullSubdomain,
+          hostname: targetHostname,
+          port: targetPort,
+          targetUrl: sanitizedTargetUrl,
+          mode: sanitizedMode,
+        })
+        .returning();
+
+      return c.json({ domain: inserted[0] });
+    }
+
     await redis.set(fullSubdomain, `${sanitizedHostname}:${parsedPort}`);
     const inserted = await db
       .insert(domainTable)
@@ -95,6 +146,7 @@ domainsRouter.post("/", async (c) => {
         subdomain: fullSubdomain,
         hostname: sanitizedHostname,
         port: parsedPort,
+        mode: sanitizedMode,
       })
       .returning();
 

@@ -29,6 +29,20 @@
       "when": 1774700000000,
       "tag": "0003_swift_horizon",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776777063470,
+      "tag": "0004_rich_kulan_gath",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776777245090,
+      "tag": "0005_blushing_the_fury",
+      "breakpoints": true
     }
   ]
 }

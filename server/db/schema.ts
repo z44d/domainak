@@ -29,8 +29,10 @@ export const domainTable = pgTable(
       .notNull()
       .references(() => userTable.id),
     subdomain: varchar("subdomain", { length: 64 }).notNull().unique(),
-    hostname: varchar("hostname", { length: 64 }).notNull(),
-    port: integer("port").notNull(),
+    hostname: varchar("hostname", { length: 64 }),
+    port: integer("port"),
+    targetUrl: varchar("target_url", { length: 500 }),
+    mode: varchar("mode", { length: 8 }).default("proxy").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
