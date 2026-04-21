@@ -1,7 +1,6 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import * as config from "./config";
 import { openApiDoc } from "./openapi";
 import { adminRouter } from "./routes/admin";
 import { authRouter } from "./routes/auth";
@@ -21,13 +20,13 @@ function registerApiRoutes(router: Hono) {
   router.get("/swagger", swaggerUI({ url: "/doc" }));
 }
 
-app.use(
-  "*",
-  cors({
-    origin: config.WEBSITE_URL,
+app.use("*", (c, next) => {
+  const corsMiddleware = cors({
+    origin: c.req.header("Origin") ?? "",
     credentials: true,
-  }),
-);
+  });
+  return corsMiddleware(c, next);
+});
 
 registerApiRoutes(app);
 registerApiRoutes(apiRouter);

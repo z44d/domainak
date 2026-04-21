@@ -130,7 +130,6 @@ load_existing_env() {
       GITHUB_CLIENT_ID) GITHUB_CLIENT_ID_DEFAULT="$value" ;;
       GITHUB_CLIENT_SECRET) GITHUB_CLIENT_SECRET_DEFAULT="$value" ;;
       ADMIN_IDS) ADMIN_IDS_DEFAULT="$value" ;;
-      WEBSITE_URL) WEBSITE_URL_DEFAULT="$value" ;;
       JWT_SECRET) JWT_SECRET_DEFAULT="$value" ;;
     esac
   done < "$ENV_FILE"
@@ -231,7 +230,6 @@ $(write_env_line POSTGRES_URL "$POSTGRES_URL")
 $(write_env_line GITHUB_CLIENT_ID "$GITHUB_CLIENT_ID")
 $(write_env_line GITHUB_CLIENT_SECRET "$GITHUB_CLIENT_SECRET")
 $(write_env_line ADMIN_IDS "$ADMIN_IDS")
-$(write_env_line WEBSITE_URL "$WEBSITE_URL")
 $(write_env_line JWT_SECRET "$JWT_SECRET")
 EOF
 }
@@ -282,7 +280,6 @@ main() {
   prompt_value GITHUB_CLIENT_ID "GitHub OAuth Client ID" "${GITHUB_CLIENT_ID_DEFAULT:-}" true false "Required. Create an OAuth app at https://github.com/settings/applications/new"
   prompt_value GITHUB_CLIENT_SECRET "GitHub OAuth Client Secret" "${GITHUB_CLIENT_SECRET_DEFAULT:-}" true true "Required. Hidden while you type."
   prompt_value ADMIN_IDS "Admin GitHub User IDs" "${ADMIN_IDS_DEFAULT:-}" false false "Optional. Comma-separated GitHub numeric user IDs with admin access."
-  prompt_value WEBSITE_URL "Public website URL" "${WEBSITE_URL_DEFAULT:-http://localhost:5173}" true false "Required. Must match your GitHub OAuth callback configuration."
   prompt_value JWT_SECRET "JWT Secret" "${JWT_SECRET_DEFAULT:-}" true true "Required. Use a long random secret. Hidden while you type."
 
   write_env_file

@@ -129,7 +129,6 @@ Frontend `eslint.config.js` additionally enforces:
 
 ## Error Handling
 - Backend routes usually return `c.json({ error: message }, status)`.
-- Auth flows redirect to `WEBSITE_URL` with query-string errors.
 - Catch unknown errors and log meaningful context with `console.error`.
 - Frontend fetch code throws `ApiError`; handle it explicitly.
 - Prefer `getErrorMessage()` for user-facing frontend messages.

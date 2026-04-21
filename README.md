@@ -57,8 +57,6 @@ Key values:
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` - required for login
 - `ADMIN_IDS` - comma-separated GitHub user IDs with admin access
 - `JWT_SECRET` - required and should be long and random
-- `WEBSITE_URL` - browser URL for the frontend
-- `BACKEND_URL` - browser-facing API URL, usually ending in `/api`
 - `TUNNEL_TOKEN` - required for Cloudflare Tunnel in Docker deployment
 
 ## GitHub OAuth setup
@@ -117,8 +115,6 @@ GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 ADMIN_IDS=12345678
 JWT_SECRET=replace-with-a-long-random-secret
-WEBSITE_URL=http://localhost:5173
-BACKEND_URL=http://localhost:2007/api
 ```
 
 ### 4. Start the backend
@@ -213,14 +209,10 @@ GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 ADMIN_IDS=12345678,87654321
 JWT_SECRET=replace-with-a-long-random-secret
-WEBSITE_URL=https://panel.example.com
-BACKEND_URL=https://api.example.com/api
 ```
 
 Notes:
 
-- `BACKEND_URL` should be the public API URL used by browsers.
-- `WEBSITE_URL` must match the public panel URL and GitHub OAuth configuration.
 - `DOMAINS` should contain every suffix you want users to register.
 
 ### 4. Verify DNS and tunnel design
@@ -340,7 +332,6 @@ docker compose down
 
 - Confirm `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
 - Confirm the callback URL in GitHub matches the backend public URL
-- Confirm `WEBSITE_URL` points to the actual browser URL
 
 ### Admin page redirects away
 
