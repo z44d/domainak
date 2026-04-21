@@ -23,8 +23,7 @@ type MutationOptions = RequestOptions & {
 
 type JsonBody = Record<string, unknown> | Array<unknown>;
 
-const configuredBaseUrl =
-  import.meta.env.VITE_API_URL?.trim() || "/api";
+const configuredBaseUrl = "/api";
 
 function getRequestBaseUrl() {
   if (

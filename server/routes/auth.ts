@@ -33,11 +33,11 @@ authRouter.get("/callback", async (c) => {
     const error = c.req.query("error");
 
     if (error) {
-      return c.redirect(`${config.FRONTEND_URL}?error=${error}`);
+      return c.redirect(`${config.WEBSITE_URL}?error=${error}`);
     }
 
     if (!code) {
-      return c.redirect(`${config.FRONTEND_URL}?error=no_code`);
+      return c.redirect(`${config.WEBSITE_URL}?error=no_code`);
     }
 
     const tokenResponse = await axios.post(
@@ -52,7 +52,7 @@ authRouter.get("/callback", async (c) => {
 
     const accessToken = tokenResponse.data.access_token;
     if (!accessToken) {
-      return c.redirect(`${config.FRONTEND_URL}?error=no_token`);
+      return c.redirect(`${config.WEBSITE_URL}?error=no_token`);
     }
 
     const userResponse = await axios.get("https://api.github.com/user", {
@@ -90,7 +90,7 @@ authRouter.get("/callback", async (c) => {
       // biome-ignore lint/style/noNonNullAssertion: Guaranteed array index
       user = existingUsers[0]!;
       if (user.isBanned) {
-        return c.redirect(`${config.FRONTEND_URL}?error=banned`);
+        return c.redirect(`${config.WEBSITE_URL}?error=banned`);
       }
       const updated = await db
         .update(userTable)
@@ -118,10 +118,10 @@ authRouter.get("/callback", async (c) => {
     };
     const token = await sign(payload, secret);
 
-    return c.redirect(`${config.FRONTEND_URL}/callback?token=${token}`);
+    return c.redirect(`${config.WEBSITE_URL}/callback?token=${token}`);
   } catch (error) {
     console.error("Auth error:", error);
-    return c.redirect(`${config.FRONTEND_URL}?error=auth_failed`);
+    return c.redirect(`${config.WEBSITE_URL}?error=auth_failed`);
   }
 });
 

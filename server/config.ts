@@ -1,5 +1,5 @@
-export const FRONTEND_URL =
-  process.env.FRONTEND_URL || "http://localhost:5173";
+export const WEBSITE_URL =
+  process.env.WEBSITE_URL || "http://localhost:5173";
 export const POSTGRES_USER = process.env.POSTGRES_USER || "postgres";
 export const POSTGRES_PASSWORD =
   process.env.POSTGRES_PASSWORD || "postgres";
