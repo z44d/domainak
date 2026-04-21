@@ -23,25 +23,21 @@ type MutationOptions = RequestOptions & {
 
 type JsonBody = Record<string, unknown> | Array<unknown>;
 
-const configuredBaseUrl = "/api";
 
 function getRequestBaseUrl() {
-  if (
-    configuredBaseUrl.startsWith("http://") ||
-    configuredBaseUrl.startsWith("https://")
-  ) {
-    return configuredBaseUrl;
-  }
-
-  return new URL(configuredBaseUrl, window.location.origin).toString();
+  const url = new URL("/api", window.location.origin).toString();
+  // Ensure it ends with a slash so new URL(path, base) appends correctly
+  return url.endsWith("/") ? url : `${url}/`;
 }
 
 function buildUrl(path: string, params?: RequestOptions["params"]) {
   const baseUrl = getRequestBaseUrl();
-  const url = new URL(
-    path,
-    `${baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`}`,
-  );
+  
+  // Remove the leading slash from the path if it exists
+  const relativePath = path.startsWith('/') ? path.slice(1) : path;
+
+  // Now the URL constructor will append it to the end of the base path
+  const url = new URL(relativePath, baseUrl);
 
   if (params) {
     for (const [key, value] of Object.entries(params)) {
