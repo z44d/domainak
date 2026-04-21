@@ -1,1 +1,0 @@
-ALTER TABLE "domain" ADD COLUMN "mode" varchar(8) DEFAULT 'proxy' NOT NULL;

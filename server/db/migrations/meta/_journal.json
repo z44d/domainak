@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1773521014215,
-      "tag": "0000_neat_war_machine",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1773522584063,
-      "tag": "0001_gorgeous_firebird",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1774206845249,
-      "tag": "0002_absent_sage",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1774700000000,
-      "tag": "0003_swift_horizon",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1776777063470,
-      "tag": "0004_rich_kulan_gath",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1776777245090,
-      "tag": "0005_blushing_the_fury",
+      "when": 1776778869458,
+      "tag": "0000_needy_scarecrow",
       "breakpoints": true
     }
   ]
