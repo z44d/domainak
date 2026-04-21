@@ -1,8 +1,8 @@
+import * as config from "../config";
 import axios from "axios";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { sign } from "hono/jwt";
-import * as config from "../config";
 import { db } from "../db";
 import { userTable } from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
@@ -13,7 +13,7 @@ const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = config;
 
 authRouter.get("/github", (c) => {
   const url = new URL(c.req.url);
-  const redirectUri = `${url.origin}/auth/callback`;
+  const redirectUri = `${url.origin}/api/auth/callback`;
   const githubAuthUrl = new URL(
     "https://github.com/login/oauth/authorize",
   );
