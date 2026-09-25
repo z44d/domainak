@@ -1,3 +1,4 @@
+import { Box, Divider, Stack, Typography, useTheme } from "@mui/material";
 import { memo, useMemo } from "react";
 import type { Stats } from "../lib/types";
 import { formatNumber } from "../lib/utils";
@@ -24,6 +25,11 @@ function DomainStatsChart({
 }: {
   chartData: Stats["chartData"];
 }) {
+  const theme = useTheme();
+  const gridColor = theme.palette.divider;
+  const axisColor = theme.palette.text.secondary;
+  const barColor = theme.palette.primary.main;
+
   const chart = useMemo(() => {
     const values = chartData.map((item) => item.visitors);
     const maxValue = Math.max(...values, 0);
@@ -71,12 +77,22 @@ function DomainStatsChart({
   }, [chartData]);
 
   return (
-    <div className="stats-chart" aria-label="Monthly visitors bar chart">
-      <svg
+    <Box
+      aria-label="Monthly visitors bar chart"
+      sx={{ height: "100%", minHeight: 180 }}
+    >
+      <Box
+        component="svg"
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-        className="stats-chart__svg"
         role="img"
         aria-hidden="true"
+        preserveAspectRatio="xMidYMid meet"
+        sx={{
+          width: "100%",
+          height: "100%",
+          overflow: "visible",
+          display: { xs: "none", sm: "block" },
+        }}
       >
         {chart.yTicks.map((tick) => (
           <g key={`${tick.value}-${tick.y}`}>
@@ -85,13 +101,15 @@ function DomainStatsChart({
               x2={chartWidth - padding.right}
               y1={tick.y}
               y2={tick.y}
-              className="stats-chart__grid"
+              stroke={gridColor}
+              strokeDasharray="4 4"
             />
             <text
               x={padding.left - 10}
               y={tick.y + 4}
               textAnchor="end"
-              className="stats-chart__axis"
+              fill={axisColor}
+              fontSize="12"
             >
               {formatTick(tick.value)}
             </text>
@@ -108,29 +126,47 @@ function DomainStatsChart({
               height={Math.max(0, bar.height)}
               rx="6"
               ry="6"
-              className="stats-chart__bar"
+              fill={barColor}
             />
             <text
               x={bar.x + bar.width / 2}
               y={chart.baselineY + 20}
               textAnchor="middle"
-              className="stats-chart__axis"
+              fill={axisColor}
+              fontSize="12"
             >
               {bar.name}
             </text>
           </g>
         ))}
-      </svg>
+      </Box>
 
-      <div className="stats-chart__fallback" aria-hidden="true">
+      <Stack
+        divider={<Divider />}
+        aria-hidden="true"
+        sx={{ display: { xs: "flex", sm: "none" } }}
+      >
         {chartData.map((item) => (
-          <div key={item.name} className="stats-chart__row">
-            <span>{item.name}</span>
-            <strong>{formatNumber(item.visitors)}</strong>
-          </div>
+          <Box
+            key={item.name}
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 2,
+              py: 1,
+            }}
+          >
+            <Typography variant="body2" color="textSecondary">
+              {item.name}
+            </Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              {formatNumber(item.visitors)}
+            </Typography>
+          </Box>
         ))}
-      </div>
-    </div>
+      </Stack>
+    </Box>
   );
 }
 

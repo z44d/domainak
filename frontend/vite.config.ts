@@ -1,9 +1,8 @@
-import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react()],
   build: {
     rollupOptions: {
       output: {
@@ -24,12 +23,12 @@ export default defineConfig({
             return "vendor-router";
           }
 
-          if (id.includes("axios")) {
-            return "vendor-network";
+          if (id.includes("@mui") || id.includes("@emotion")) {
+            return "vendor-mui";
           }
 
-          if (id.includes("lucide-react")) {
-            return "vendor-icons";
+          if (id.includes("axios")) {
+            return "vendor-network";
           }
         },
       },

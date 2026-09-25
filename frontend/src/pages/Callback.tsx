@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { LoadingScreen } from "../components/LoadingScreen";
 
 export default function Callback() {
   const navigate = useNavigate();
@@ -15,12 +16,5 @@ export default function Callback() {
     }
   }, [navigate, searchParams]);
 
-  return (
-    <div className="loading-screen" aria-live="polite" aria-busy="true">
-      <div className="loading-stack">
-        <div className="spinner" aria-hidden="true" />
-        <p>Signing you in...</p>
-      </div>
-    </div>
-  );
+  return <LoadingScreen label="Signing you in..." />;
 }

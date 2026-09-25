@@ -1,14 +1,35 @@
 import {
-  Activity,
-  AlertCircle,
-  Calendar,
-  Globe,
-  Loader2,
-  Plus,
-  Trash2,
-} from "lucide-react";
+  AddRounded,
+  CloseRounded,
+  DeleteOutlineRounded,
+  LanguageRounded,
+  QueryStatsRounded,
+} from "@mui/icons-material";
 import {
-  type ChangeEvent,
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Collapse,
+  Divider,
+  FormControl,
+  InputAdornment,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Snackbar,
+  Stack,
+  TextField,
+  Typography,
+  alpha,
+  useTheme,
+} from "@mui/material";
+import {
   type FormEvent,
   lazy,
   memo,
@@ -16,17 +37,24 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { Navbar } from "../components/Navbar";
+import { AppShell } from "../components/AppShell";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { LoadingScreen } from "../components/LoadingScreen";
 import { ApiError, api } from "../lib/api";
 import type { Domain, Stats, User } from "../lib/types";
 import { formatNumber, getErrorMessage } from "../lib/utils";
+import { FONT_DISPLAY, FONT_MONO } from "../theme/theme";
 
 type DomainsResponse = { domains: Domain[] };
 type AvailableDomainsResponse = { available: string[] };
+
+interface Feedback {
+  message: string;
+  severity: "success" | "error";
+}
 
 const DomainStatsChart = lazy(
   () => import("../components/DomainStatsChart"),
@@ -48,21 +76,16 @@ export default function Dashboard() {
   });
   const [addError, setAddError] = useState("");
   const [pageError, setPageError] = useState("");
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const feedbackTimeoutRef = useRef<number | null>(null);
 
-  const setTransientFeedback = useCallback((message: string) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) {
-      window.clearTimeout(feedbackTimeoutRef.current);
-    }
-    feedbackTimeoutRef.current = window.setTimeout(() => {
-      setFeedback("");
-      feedbackTimeoutRef.current = null;
-    }, 4000);
-  }, []);
+  const setTransientFeedback = useCallback(
+    (message: string, severity: Feedback["severity"] = "success") => {
+      setFeedback({ message, severity });
+    },
+    [],
+  );
 
   const fetchData = useCallback(
     async (signal?: AbortSignal) => {
@@ -117,9 +140,6 @@ export default function Dashboard() {
 
     return () => {
       controller.abort();
-      if (feedbackTimeoutRef.current) {
-        window.clearTimeout(feedbackTimeoutRef.current);
-      }
     };
   }, [fetchData]);
 
@@ -127,7 +147,7 @@ export default function Dashboard() {
     async (e: FormEvent) => {
       e.preventDefault();
       setAddError("");
-      setFeedback("");
+      setFeedback(null);
 
       const trimmedSubdomain = formData.subdomain.trim();
       const trimmedHostname = formData.hostname.trim();
@@ -188,7 +208,7 @@ export default function Dashboard() {
 
   const handleDelete = useCallback(
     async (id: number) => {
-      setFeedback("");
+      setFeedback(null);
       setDeletingId(id);
       try {
         await api.delete(`/domains/${id}`);
@@ -197,9 +217,10 @@ export default function Dashboard() {
         );
         setTransientFeedback("Domain removed from your workspace.");
       } catch (error: unknown) {
-        setFeedback(
-          getErrorMessage(error, "We could not remove that domain."),
-        );
+        setFeedback({
+          message: getErrorMessage(error, "We could not remove that domain."),
+          severity: "error",
+        });
       } finally {
         setDeletingId(null);
       }
@@ -208,265 +229,337 @@ export default function Dashboard() {
   );
 
   if (isLoading) {
-    return (
-      <div className="loading-screen" aria-live="polite" aria-busy="true">
-        <div className="loading-stack">
-          <div className="spinner" aria-hidden="true" />
-          <p>Loading your domains...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen label="Loading your domains..." />;
   }
 
   return (
-    <div className="app-shell">
-      <Navbar user={user} />
-
-      <main className="app-main stack-lg">
-        <header className="page-header page-header--split surface-enter dashboard-header">
-          <div>
-            <div className="eyebrow">Workspace</div>
-            <h1 className="page-title page-title--compact">Domains</h1>
-            <p className="page-copy">
-              Register a destination, review traffic only when you need it,
-              and keep the day-to-day workspace focused on routing
-              decisions.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowAddForm((current) => !current)}
-            className="button button-primary"
+    <AppShell user={user}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", md: "row" },
+          justifyContent: "space-between",
+          alignItems: { xs: "flex-start", md: "flex-end" },
+          gap: 2,
+          mb: 4,
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Chip
+            label="Workspace"
+            size="small"
+            variant="outlined"
+            color="primary"
+            sx={{ mb: 1.5 }}
+          />
+          <Typography variant="h1" component="h1">
+            Domains
+          </Typography>
+          <Typography
+            variant="body1"
+            color="textSecondary"
+            sx={{ mt: 1, maxWidth: 640 }}
           >
-            <Plus className="w-4 h-4" />
-            {showAddForm ? "Hide form" : "New domain"}
-          </button>
-        </header>
+            Register a destination, review traffic only when you need it, and
+            keep the day-to-day workspace focused on routing decisions.
+          </Typography>
+        </Box>
 
-        {pageError ? (
-          <section className="panel surface-enter">
-            <div
-              className="status-banner status-banner--danger"
-              role="alert"
+        <Button
+          variant="contained"
+          size="large"
+          startIcon={showAddForm ? <CloseRounded /> : <AddRounded />}
+          onClick={() => setShowAddForm((current) => !current)}
+          sx={{ width: { xs: "100%", md: "auto" } }}
+        >
+          {showAddForm ? "Hide form" : "New domain"}
+        </Button>
+      </Box>
+
+      {pageError ? (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                setIsLoading(true);
+                fetchData();
+              }}
             >
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div className="stack-sm">
-                <strong>Workspace unavailable</strong>
-                <span>{pageError}</span>
-              </div>
-            </div>
-            <div className="panel-actions mt-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLoading(true);
-                  fetchData();
+              Try again
+            </Button>
+          }
+        >
+          <Typography variant="subtitle2">Workspace unavailable</Typography>
+          <Typography variant="body2" dir="auto">
+            {pageError}
+          </Typography>
+        </Alert>
+      ) : null}
+
+      <Collapse in={showAddForm && !pageError} unmountOnExit>
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="overline" color="textSecondary">
+              Create route
+            </Typography>
+            <Typography variant="h3" component="h2" sx={{ mt: 0.25 }}>
+              Register a new subdomain
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ mt: 0.75, mb: 2.5, maxWidth: 640 }}
+            >
+              Use the same format every time: choose a name, confirm the
+              suffix, and point it at the host that should receive traffic.
+            </Typography>
+
+            {addError ? (
+              <Alert severity="error" sx={{ mb: 2.5 }} role="alert">
+                {addError}
+              </Alert>
+            ) : null}
+
+            <Box
+              component="form"
+              onSubmit={handleAddSubmit}
+              sx={{ display: "grid", gap: 2.5 }}
+            >
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2.5,
+                  gridTemplateColumns: {
+                    xs: "1fr",
+                    md: "1.3fr 1.3fr 0.7fr",
+                  },
                 }}
-                className="button button-secondary"
               >
-                Try again
-              </button>
-            </div>
-          </section>
-        ) : null}
+                <TextField
+                  label="Subdomain"
+                  required
+                  fullWidth
+                  placeholder="my-app"
+                  value={formData.subdomain}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      subdomain: event.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9-]/g, ""),
+                    })
+                  }
+                  helperText="Keep it short and easy to recognize."
+                  slotProps={{
+                    htmlInput: {
+                      minLength: 2,
+                      maxLength: 63,
+                      autoCapitalize: "none",
+                      autoCorrect: "off",
+                      spellCheck: false,
+                      dir: "auto",
+                    },
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <Select
+                            value={formData.domain}
+                            onChange={(event) =>
+                              setFormData({
+                                ...formData,
+                                domain: String(event.target.value),
+                              })
+                            }
+                            disabled={availableDomains.length === 0}
+                            aria-label="Available domain suffix"
+                            variant="standard"
+                            disableUnderline
+                            sx={{
+                              color: "text.secondary",
+                              fontWeight: 600,
+                              ml: 1,
+                              mr: -0.5,
+                            }}
+                          >
+                            {availableDomains.map((domain) => (
+                              <MenuItem key={domain} value={domain}>
+                                .{domain}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
 
-        {feedback ? (
-          <div className="status-banner" role="status" aria-live="polite">
-            <span>{feedback}</span>
-          </div>
-        ) : null}
+                <TextField
+                  label="Destination host"
+                  required
+                  fullWidth
+                  placeholder="192.168.1.5 or app.example.net"
+                  value={formData.hostname}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      hostname: event.target.value,
+                    })
+                  }
+                  helperText="IP address, hostname, or tunnel endpoint."
+                  slotProps={{
+                    htmlInput: {
+                      maxLength: 255,
+                      autoCapitalize: "none",
+                      autoCorrect: "off",
+                      spellCheck: false,
+                      dir: "auto",
+                    },
+                  }}
+                />
 
-        {!pageError && showAddForm && (
-          <section className="panel panel--soft surface-enter dashboard-form-panel">
-            <div className="panel__header">
-              <p className="eyebrow">Create route</p>
-              <h2 className="panel__title">Register a new subdomain</h2>
-              <p className="panel__copy">
-                Use the same format every time: choose a name, confirm the
-                suffix, and point it at the host that should receive
-                traffic.
-              </p>
-            </div>
+                <TextField
+                  label="Destination port"
+                  required
+                  fullWidth
+                  type="number"
+                  placeholder="8080"
+                  value={formData.port}
+                  onChange={(event) =>
+                    setFormData({ ...formData, port: event.target.value })
+                  }
+                  helperText="The service port that receives requests."
+                  slotProps={{
+                    htmlInput: {
+                      min: 1,
+                      max: 65535,
+                      inputMode: "numeric",
+                    },
+                  }}
+                />
+              </Box>
 
-            {addError && (
-              <div
-                className="status-banner status-banner--danger"
-                role="alert"
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: {
+                    xs: "column-reverse",
+                    sm: "row",
+                  },
+                  justifyContent: "space-between",
+                  alignItems: { xs: "stretch", sm: "center" },
+                  gap: 1.5,
+                }}
               >
-                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>{addError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleAddSubmit} className="field-grid mt-6">
-              <div className="field-grid field-grid--two">
-                <div className="field">
-                  <label htmlFor="subdomainInput" className="field-label">
-                    Subdomain
-                  </label>
-                  <span className="field-hint">
-                    Keep it short and easy to recognize.
-                  </span>
-                  <div className="split-field">
-                    <input
-                      id="subdomainInput"
-                      type="text"
-                      required
-                      minLength={2}
-                      maxLength={63}
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      placeholder="my-app"
-                      value={formData.subdomain}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          subdomain: e.target.value
-                            .toLowerCase()
-                            .replace(/[^a-z0-9-]/g, ""),
-                        })
-                      }
-                      className="text-field"
-                    />
-                    <select
-                      aria-label="Available domain suffix"
-                      value={formData.domain}
-                      disabled={availableDomains.length === 0}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          domain: e.target.value,
-                        })
-                      }
-                      className="select-field"
-                    >
-                      {availableDomains.map((domain) => (
-                        <option key={domain} value={domain}>
-                          .{domain}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="hostnameInput" className="field-label">
-                    Destination host
-                  </label>
-                  <span className="field-hint">
-                    IP address, hostname, or tunnel endpoint.
-                  </span>
-                  <input
-                    id="hostnameInput"
-                    type="text"
-                    required
-                    maxLength={255}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    dir="auto"
-                    placeholder="192.168.1.5 or app.example.net"
-                    value={formData.hostname}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        hostname: e.target.value,
-                      })
-                    }
-                    className="text-field"
-                  />
-                </div>
-
-                <div className="field">
-                  <label htmlFor="portInput" className="field-label">
-                    Destination port
-                  </label>
-                  <span className="field-hint">
-                    Enter the service port that should receive requests.
-                  </span>
-                  <input
-                    id="portInput"
-                    type="number"
-                    required
-                    inputMode="numeric"
-                    min={1}
-                    max={65535}
-                    placeholder="8080"
-                    value={formData.port}
-                    onChange={(e) =>
-                      setFormData({ ...formData, port: e.target.value })
-                    }
-                    className="text-field"
-                  />
-                </div>
-              </div>
-
-              <div className="subtle-row">
-                <p className="field-hint">
+                <Typography variant="caption" color="textSecondary">
                   {availableDomains.length > 0
                     ? "Changes take effect immediately after registration."
                     : "No domain suffixes are available right now."}
-                </p>
-                <div className="nav-actions">
-                  <button
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
                     type="button"
+                    color="inherit"
                     onClick={() => setShowAddForm(false)}
-                    className="button button-ghost"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
+                    variant="contained"
                     disabled={
                       isSubmitting || availableDomains.length === 0
                     }
-                    className="button button-primary"
+                    startIcon={
+                      isSubmitting ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : undefined
+                    }
                   >
-                    {isSubmitting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : null}
                     Register domain
-                  </button>
-                </div>
-              </div>
-            </form>
-          </section>
-        )}
+                  </Button>
+                </Stack>
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+      </Collapse>
 
-        {!pageError && domains.length === 0 ? (
-          <section className="empty-panel empty-panel--accent surface-enter">
-            <div className="eyebrow">
-              <Globe className="w-4 h-4" /> Empty workspace
-            </div>
-            <h2 className="empty-panel__title">No routes yet</h2>
-            <p className="empty-panel__copy">
-              Start by registering a subdomain, then point it at the
-              service or tunnel you want to expose.
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowAddForm(true)}
-              className="button button-secondary"
-            >
-              Register your first domain
-            </button>
-          </section>
-        ) : !pageError ? (
-          <section className="domains-list surface-enter">
-            {domains.map((domain) => (
-              <DomainRow
-                key={domain.id}
-                domain={domain}
-                onDelete={handleDelete}
-                isDeleting={deletingId === domain.id}
-              />
-            ))}
-          </section>
-        ) : null}
-      </main>
-    </div>
+      {!pageError && domains.length === 0 ? (
+        <Card
+          sx={{
+            borderStyle: "dashed",
+            textAlign: "center",
+            py: 6,
+            px: 3,
+          }}
+        >
+          <Box
+            sx={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              mx: "auto",
+              display: "grid",
+              placeItems: "center",
+              bgcolor: "primary.main",
+              color: "primary.contrastText",
+            }}
+          >
+            <LanguageRounded />
+          </Box>
+          <Typography variant="h3" component="h2" sx={{ mt: 2 }}>
+            No routes yet
+          </Typography>
+          <Typography
+            variant="body2"
+            color="textSecondary"
+            sx={{ maxWidth: 420, mx: "auto", mt: 1 }}
+          >
+            Start by registering a subdomain, then point it at the service or
+            tunnel you want to expose.
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddRounded />}
+            onClick={() => setShowAddForm(true)}
+            sx={{ mt: 2.5 }}
+          >
+            Register your first domain
+          </Button>
+        </Card>
+      ) : !pageError ? (
+        <Box sx={{ display: "grid", gap: 2.5 }}>
+          {domains.map((domain) => (
+            <DomainRow
+              key={domain.id}
+              domain={domain}
+              onDelete={handleDelete}
+              isDeleting={deletingId === domain.id}
+            />
+          ))}
+        </Box>
+      ) : null}
+
+      <Snackbar
+        open={feedback !== null}
+        autoHideDuration={4000}
+        onClose={() => setFeedback(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setFeedback(null)}
+          severity={feedback?.severity ?? "success"}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {feedback?.message}
+        </Alert>
+      </Snackbar>
+    </AppShell>
   );
 }
 
@@ -479,6 +572,7 @@ const DomainRow = memo(function DomainRow({
   onDelete: (id: number) => void;
   isDeleting: boolean;
 }) {
+  const theme = useTheme();
   const [stats, setStats] = useState<Stats | null>(null);
   const [showStats, setShowStats] = useState(false);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
@@ -522,8 +616,7 @@ const DomainRow = memo(function DomainRow({
     setShowStats((current) => !current);
   };
 
-  const handleYearChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const nextYear = e.target.value;
+  const handleYearChange = (nextYear: string) => {
     setYear(nextYear);
     if (showStats) {
       fetchStats(nextYear);
@@ -531,185 +624,260 @@ const DomainRow = memo(function DomainRow({
   };
 
   return (
-    <article className="domain-row domain-row--signal">
-      <div className="domain-row__top">
-        <div className="domain-row__identity">
-          <div className="eyebrow">
-            <Globe className="w-4 h-4" /> Active route
-          </div>
-          <h2 className="domain-row__name text-wrap-anywhere" dir="auto">
-            {domain.subdomain}
-          </h2>
-          <p className="domain-row__meta text-wrap-anywhere" dir="auto">
-            Traffic is sent to {domain.hostname}:{domain.port}
-          </p>
-        </div>
+    <Card>
+      <Box
+        sx={{
+          p: { xs: 2, sm: 2.5 },
+          display: "flex",
+          flexDirection: { xs: "column", md: "row" },
+          alignItems: { xs: "flex-start", md: "center" },
+          justifyContent: "space-between",
+          gap: 2,
+        }}
+      >
+        <Box sx={{ display: "flex", gap: 2, minWidth: 0 }}>
+          <Avatar
+            variant="rounded"
+            sx={{
+              bgcolor: alpha(theme.palette.primary.main, 0.15),
+              color: "primary.main",
+              borderRadius: "14px",
+            }}
+          >
+            <LanguageRounded />
+          </Avatar>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              variant="overline"
+              color="textSecondary"
+              sx={{ display: "block", lineHeight: 1.4 }}
+            >
+              Active route
+            </Typography>
+            <Typography
+              dir="auto"
+              sx={{
+                fontFamily: FONT_MONO,
+                fontWeight: 600,
+                fontSize: "1.15rem",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {domain.subdomain}
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              dir="auto"
+              sx={{
+                fontFamily: FONT_MONO,
+                overflowWrap: "anywhere",
+              }}
+            >
+              → {domain.hostname}:{domain.port}
+            </Typography>
+          </Box>
+        </Box>
 
-        <div className="nav-actions">
-          <button
-            type="button"
-            onClick={toggleStats}
-            className={`button ${showStats ? "button-secondary" : "button-ghost"}`}
-            aria-expanded={showStats}
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{ flexShrink: 0, flexWrap: "wrap" }}
+        >
+          <Button
+            size="small"
+            variant={showStats ? "contained" : "outlined"}
+            startIcon={<QueryStatsRounded />}
+            onClick={() => {
+              void toggleStats();
+            }}
             disabled={isDeleting}
           >
-            <Activity className="w-4 h-4" />
-            {showStats ? "Hide analytics" : "View analytics"}
-          </button>
-          {confirmDelete ? (
-            <div
-              className="confirm-actions"
-              role="group"
-              aria-label="Confirm domain removal"
-            >
-              <button
-                type="button"
-                onClick={() => onDelete(domain.id)}
-                className="button button-danger"
-                disabled={isDeleting}
+            {showStats ? "Hide analytics" : "Analytics"}
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            variant="outlined"
+            startIcon={
+              isDeleting ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <DeleteOutlineRounded />
+              )
+            }
+            onClick={() => setConfirmDelete(true)}
+            disabled={isDeleting}
+          >
+            Remove
+          </Button>
+        </Stack>
+      </Box>
+
+      {showStats ? (
+        <>
+          <Divider />
+          <CardContent>
+            <Stack spacing={2.5}>
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: { xs: "column", sm: "row" },
+                  justifyContent: "space-between",
+                  alignItems: { xs: "flex-start", sm: "center" },
+                  gap: 1.5,
+                }}
               >
-                {isDeleting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                Confirm remove
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="button button-ghost"
-                disabled={isDeleting}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="button button-danger"
-              disabled={isDeleting}
-            >
-              <Trash2 className="w-4 h-4" /> Remove
-            </button>
-          )}
-        </div>
-      </div>
-
-      {showStats && (
-        <section className="chart-shell chart-shell--insight surface-enter">
-          <div className="subtle-row">
-            <div>
-              <div className="eyebrow">
-                <Activity className="w-4 h-4" /> Traffic review
-              </div>
-              <p className="page-copy text-wrap-balance">
-                Open yearly traffic only when you need it. The default view
-                keeps the main list easier to scan.
-              </p>
-            </div>
-
-            <div className="field">
-              <label htmlFor={`year-${domain.id}`} className="field-label">
-                Year
-              </label>
-              <div className="split-field">
-                <span className="text-field flex items-center gap-2">
-                  <Calendar className="w-4 h-4" /> Reporting period
-                </span>
-                <select
-                  id={`year-${domain.id}`}
-                  value={year}
-                  onChange={handleYearChange}
-                  className="select-field"
-                >
-                  {years.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {statsError ? (
-            <div
-              className="status-banner status-banner--danger"
-              role="alert"
-            >
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div className="stack-sm">
-                <span>{statsError}</span>
-                <button
-                  type="button"
-                  onClick={() => fetchStats(year)}
-                  className="button button-ghost"
-                >
-                  Try again
-                </button>
-              </div>
-            </div>
-          ) : isLoadingStats && !stats ? (
-            <div className="loading-stack py-8" aria-live="polite">
-              <div className="spinner" aria-hidden="true" />
-              <p>Loading analytics...</p>
-            </div>
-          ) : stats ? (
-            <div className="stack-lg">
-              <div className="metric-grid">
-                <MetricCard
-                  label="Daily"
-                  value={formatNumber(stats.daily)}
-                  tone="daily"
-                />
-                <MetricCard
-                  label="Weekly"
-                  value={formatNumber(stats.weekly)}
-                  tone="weekly"
-                />
-                <MetricCard
-                  label="Monthly"
-                  value={formatNumber(stats.monthly)}
-                  tone="monthly"
-                />
-                <MetricCard
-                  label="Year total"
-                  value={formatNumber(stats.total)}
-                  accent
-                  tone="year"
-                />
-              </div>
-
-              <div className="panel">
-                <div className="panel__header">
-                  <h3 className="panel__title">Monthly visitors</h3>
-                  <p className="panel__copy">
-                    A compact view of traffic over the selected year.
-                  </p>
-                </div>
-                <div className="h-64 w-full">
-                  <Suspense
-                    fallback={
-                      <div
-                        className="loading-stack h-full"
-                        aria-live="polite"
-                      >
-                        <div className="spinner" aria-hidden="true" />
-                        <p>Preparing chart...</p>
-                      </div>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="overline" color="textSecondary">
+                    Traffic review
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    color="textSecondary"
+                    sx={{ maxWidth: 520 }}
+                  >
+                    Open yearly traffic only when you need it. The default view
+                    keeps the main list easier to scan.
+                  </Typography>
+                </Box>
+                <FormControl size="small" sx={{ minWidth: 130 }}>
+                  <InputLabel id={`year-label-${domain.id}`}>
+                    Year
+                  </InputLabel>
+                  <Select
+                    labelId={`year-label-${domain.id}`}
+                    id={`year-${domain.id}`}
+                    value={year}
+                    label="Year"
+                    onChange={(event) =>
+                      handleYearChange(String(event.target.value))
                     }
                   >
-                    <DomainStatsChart chartData={stats.chartData} />
-                  </Suspense>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </section>
-      )}
-    </article>
+                    {years.map((value) => (
+                      <MenuItem key={value} value={value}>
+                        {value}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+
+              {statsError ? (
+                <Alert
+                  severity="error"
+                  action={
+                    <Button
+                      color="inherit"
+                      size="small"
+                      onClick={() => {
+                        void fetchStats(year);
+                      }}
+                    >
+                      Try again
+                    </Button>
+                  }
+                >
+                  {statsError}
+                </Alert>
+              ) : isLoadingStats && !stats ? (
+                <Box
+                  sx={{
+                    display: "grid",
+                    placeItems: "center",
+                    gap: 1.5,
+                    py: 6,
+                  }}
+                  aria-live="polite"
+                >
+                  <CircularProgress size={28} />
+                  <Typography variant="body2" color="textSecondary">
+                    Loading analytics...
+                  </Typography>
+                </Box>
+              ) : stats ? (
+                <Stack spacing={2.5}>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: {
+                        xs: "repeat(2, 1fr)",
+                        md: "repeat(4, 1fr)",
+                      },
+                      gap: 1.5,
+                    }}
+                  >
+                    <MetricCard
+                      label="Daily"
+                      value={formatNumber(stats.daily)}
+                    />
+                    <MetricCard
+                      label="Weekly"
+                      value={formatNumber(stats.weekly)}
+                    />
+                    <MetricCard
+                      label="Monthly"
+                      value={formatNumber(stats.monthly)}
+                    />
+                    <MetricCard
+                      label="Year total"
+                      value={formatNumber(stats.total)}
+                      accent
+                    />
+                  </Box>
+
+                  <Paper
+                    variant="outlined"
+                    sx={{ borderRadius: 3, overflow: "hidden" }}
+                  >
+                    <Box sx={{ px: { xs: 2, sm: 2.5 }, pt: 2 }}>
+                      <Typography variant="h6">
+                        Monthly visitors
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        A compact view of traffic over the selected year.
+                      </Typography>
+                      <Box sx={{ height: { xs: 210, sm: 250 }, mt: 1.5 }}>
+                        <Suspense
+                          fallback={
+                            <Box
+                              sx={{
+                                height: "100%",
+                                display: "grid",
+                                placeItems: "center",
+                              }}
+                              aria-live="polite"
+                            >
+                              <CircularProgress size={28} />
+                            </Box>
+                          }
+                        >
+                          <DomainStatsChart chartData={stats.chartData} />
+                        </Suspense>
+                      </Box>
+                    </Box>
+                  </Paper>
+                </Stack>
+              ) : null}
+            </Stack>
+          </CardContent>
+        </>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Remove domain?"
+        message={`Remove ${domain.subdomain} from your workspace? Traffic to this route stops immediately.`}
+        confirmLabel="Remove"
+        loading={isDeleting}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          onDelete(domain.id);
+        }}
+      />
+    </Card>
   );
 });
 
@@ -717,19 +885,47 @@ function MetricCard({
   label,
   value,
   accent = false,
-  tone = "daily",
 }: {
   label: string;
   value: string;
   accent?: boolean;
-  tone?: "daily" | "weekly" | "monthly" | "year";
 }) {
+  const theme = useTheme();
+
   return (
-    <div
-      className={`metric-card metric-card--${tone}${accent ? " metric-card--accent" : ""}`}
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2,
+        borderRadius: 3,
+        minWidth: 0,
+        bgcolor: accent
+          ? alpha(theme.palette.primary.main, 0.1)
+          : "transparent",
+        borderColor: accent
+          ? alpha(theme.palette.primary.main, 0.35)
+          : "divider",
+      }}
     >
-      <span className="metric-label">{label}</span>
-      <span className="metric-value">{value}</span>
-    </div>
+      <Typography
+        variant="overline"
+        color="textSecondary"
+        sx={{ display: "block", lineHeight: 1.5 }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        sx={{
+          fontFamily: FONT_DISPLAY,
+          fontWeight: 700,
+          letterSpacing: "-0.02em",
+          fontSize: { xs: "1.4rem", md: "1.7rem" },
+          mt: 0.25,
+          overflowWrap: "anywhere",
+        }}
+      >
+        {value}
+      </Typography>
+    </Paper>
   );
 }

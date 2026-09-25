@@ -1,24 +1,45 @@
 import {
-  AlertCircle,
-  Ban,
-  Globe,
-  Loader2,
-  ServerOff,
-  ShieldAlert,
-  ShieldOff,
-  Trash2,
-  Users,
-} from "lucide-react";
+  BlockRounded,
+  CheckCircleRounded,
+  DeleteOutlineRounded,
+  InboxRounded,
+  PeopleRounded,
+  PublicOffRounded,
+  ShieldRounded,
+  WifiOffRounded,
+} from "@mui/icons-material";
 import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Divider,
+  Pagination,
+  Paper,
+  Snackbar,
+  Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
+  TextField,
+  Typography,
+  alpha,
+  useTheme,
+} from "@mui/material";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Navbar } from "../components/Navbar";
+import { AppShell } from "../components/AppShell";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { LoadingScreen } from "../components/LoadingScreen";
 import { ApiError, api } from "../lib/api";
 import type {
   AdminUserRow,
@@ -30,6 +51,7 @@ import type {
   User,
 } from "../lib/types";
 import { formatDate, getErrorMessage } from "../lib/utils";
+import { FONT_MONO } from "../theme/theme";
 
 type AdminView =
   | "domains"
@@ -39,6 +61,18 @@ type AdminView =
   | "banned-ips";
 
 type AdminItem = Domain | AdminUserRow | BannedDomain | BannedIp;
+
+interface Feedback {
+  message: string;
+  severity: "success" | "error";
+}
+
+interface ConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  action: () => Promise<void>;
+}
 
 const PAGE_SIZE = 20;
 
@@ -51,7 +85,7 @@ const viewMeta: Record<
     emptyTitle: string;
     emptyCopy: string;
     endpoint: string;
-    icon: typeof Globe;
+    icon: ReactElement;
   }
 > = {
   domains: {
@@ -62,7 +96,7 @@ const viewMeta: Record<
     emptyTitle: "No domains to review",
     emptyCopy: "New registrations will appear here as they are created.",
     endpoint: "/admin/domains",
-    icon: Globe,
+    icon: <ShieldRounded fontSize="small" />,
   },
   users: {
     title: "Users",
@@ -72,7 +106,7 @@ const viewMeta: Record<
     emptyTitle: "No users yet",
     emptyCopy: "User accounts will appear here after the first login.",
     endpoint: "/admin/users",
-    icon: Users,
+    icon: <PeopleRounded fontSize="small" />,
   },
   "banned-users": {
     title: "Banned users",
@@ -83,7 +117,7 @@ const viewMeta: Record<
     emptyCopy:
       "Banned accounts will appear here when moderation actions are taken.",
     endpoint: "/admin/banned-users",
-    icon: Ban,
+    icon: <BlockRounded fontSize="small" />,
   },
   "banned-domains": {
     title: "Banned domains",
@@ -93,7 +127,7 @@ const viewMeta: Record<
     emptyTitle: "No banned domains",
     emptyCopy: "Blocked domains will appear here after you ban them.",
     endpoint: "/admin/banned-domains",
-    icon: ShieldAlert,
+    icon: <PublicOffRounded fontSize="small" />,
   },
   "banned-ips": {
     title: "Blocked IPs",
@@ -104,7 +138,7 @@ const viewMeta: Record<
     emptyCopy:
       "Blocked IP addresses and hostnames will appear here after you add them.",
     endpoint: "/admin/ips",
-    icon: ServerOff,
+    icon: <WifiOffRounded fontSize="small" />,
   },
 };
 
@@ -119,6 +153,7 @@ const initialPagination = (): PaginationMeta => ({
 
 export default function Admin() {
   const navigate = useNavigate();
+  const theme = useTheme();
   const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<AdminView>("domains");
   const [pages, setPages] = useState<Record<AdminView, number>>({
@@ -135,7 +170,10 @@ export default function Admin() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isViewLoading, setIsViewLoading] = useState(false);
   const [pageError, setPageError] = useState("");
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [confirmRequest, setConfirmRequest] =
+    useState<ConfirmRequest | null>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
   const [domainToBan, setDomainToBan] = useState("");
   const [domainReason, setDomainReason] = useState("");
   const [ipToBan, setIpToBan] = useState("");
@@ -143,21 +181,16 @@ export default function Admin() {
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(
     null,
   );
-  const feedbackTimeoutRef = useRef<number | null>(null);
 
   const currentPage = pages[activeView];
   const currentMeta = viewMeta[activeView];
 
-  const setTransientFeedback = useCallback((message: string) => {
-    setFeedback(message);
-    if (feedbackTimeoutRef.current) {
-      window.clearTimeout(feedbackTimeoutRef.current);
-    }
-    feedbackTimeoutRef.current = window.setTimeout(() => {
-      setFeedback("");
-      feedbackTimeoutRef.current = null;
-    }, 4000);
-  }, []);
+  const setTransientFeedback = useCallback(
+    (message: string, severity: Feedback["severity"] = "success") => {
+      setFeedback({ message, severity });
+    },
+    [],
+  );
 
   const ensureAdmin = useCallback(
     async (signal?: AbortSignal) => {
@@ -256,9 +289,6 @@ export default function Admin() {
 
     return () => {
       controller.abort();
-      if (feedbackTimeoutRef.current) {
-        window.clearTimeout(feedbackTimeoutRef.current);
-      }
     };
   }, [activeView, currentPage, ensureAdmin, loadView, navigate]);
 
@@ -274,116 +304,155 @@ export default function Admin() {
     [],
   );
 
-  const handleDeleteDomain = useCallback(
-    async (id: number) => {
-      if (
-        !window.confirm("Remove this domain from the global routing list?")
-      ) {
-        return;
-      }
+  const handleConfirmAction = useCallback(async () => {
+    if (!confirmRequest) {
+      return;
+    }
 
-      await runAction(`domain-delete-${id}`, async () => {
-        await api.delete(`/admin/domains/${id}`);
-        setTransientFeedback("Domain removed from the global list.");
-        await reloadCurrentView();
+    setIsConfirming(true);
+    try {
+      await confirmRequest.action();
+    } catch (error: unknown) {
+      setFeedback({
+        message: getErrorMessage(
+          error,
+          "The action failed. Try again in a moment.",
+        ),
+        severity: "error",
+      });
+    } finally {
+      setIsConfirming(false);
+      setConfirmRequest(null);
+    }
+  }, [confirmRequest]);
+
+  const handleDeleteDomain = useCallback(
+    (id: number) => {
+      setConfirmRequest({
+        title: "Remove domain?",
+        message:
+          "Remove this domain from the global routing list? This cannot be undone.",
+        confirmLabel: "Remove",
+        action: async () => {
+          await runAction(`domain-delete-${id}`, async () => {
+            await api.delete(`/admin/domains/${id}`);
+            setTransientFeedback("Domain removed from the global list.");
+            await reloadCurrentView();
+          });
+        },
       });
     },
     [reloadCurrentView, runAction, setTransientFeedback],
   );
 
   const handleToggleUserBan = useCallback(
-    async (userId: number, currentStatus: boolean) => {
+    (userId: number, currentStatus: boolean) => {
       const actionLabel = currentStatus ? "unban" : "ban";
-      if (
-        !window.confirm(
-          currentStatus
-            ? "Restore this user account?"
-            : "Ban this user account and keep them from using the platform?",
-        )
-      ) {
-        return;
-      }
 
-      await runAction(`user-${userId}`, async () => {
-        await api.post(`/admin/users/${userId}/ban`, {
-          isBanned: !currentStatus,
-        });
-        setTransientFeedback(`User ${actionLabel} complete.`);
-        await reloadCurrentView();
+      setConfirmRequest({
+        title: currentStatus ? "Restore account?" : "Ban account?",
+        message: currentStatus
+          ? "Restore this user account?"
+          : "Ban this user account and keep them from using the platform?",
+        confirmLabel: currentStatus ? "Unban user" : "Ban user",
+        action: async () => {
+          await runAction(`user-${userId}`, async () => {
+            await api.post(`/admin/users/${userId}/ban`, {
+              isBanned: !currentStatus,
+            });
+            setTransientFeedback(`User ${actionLabel} complete.`);
+            await reloadCurrentView();
+          });
+        },
       });
     },
     [reloadCurrentView, runAction, setTransientFeedback],
   );
 
   const handleBanDomain = useCallback(
-    async (domain: string, reason: string, fromRow = false) => {
+    (domain: string, reason: string, fromRow = false) => {
       const trimmedDomain = domain.trim().toLowerCase();
       const trimmedReason = reason.trim();
 
       if (!trimmedDomain) {
-        setFeedback("Enter a domain before saving the block.");
-        return;
-      }
-
-      if (
-        !window.confirm(
-          fromRow
-            ? `Ban ${trimmedDomain} and remove it from the active routing list?`
-            : `Ban ${trimmedDomain} so it cannot be registered again?`,
-        )
-      ) {
-        return;
-      }
-
-      await runAction(`ban-domain-${trimmedDomain}`, async () => {
-        await api.post("/admin/banned-domains", {
-          domain: trimmedDomain,
-          reason: trimmedReason,
+        setFeedback({
+          message: "Enter a domain before saving the block.",
+          severity: "error",
         });
-        setTransientFeedback("Domain blocked.");
-        setDomainToBan("");
-        setDomainReason("");
-        await reloadCurrentView();
+        return;
+      }
+
+      setConfirmRequest({
+        title: "Block domain",
+        message: fromRow
+          ? `Ban ${trimmedDomain} and remove it from the active routing list?`
+          : `Ban ${trimmedDomain} so it cannot be registered again?`,
+        confirmLabel: "Block domain",
+        action: async () => {
+          await runAction(`ban-domain-${trimmedDomain}`, async () => {
+            await api.post("/admin/banned-domains", {
+              domain: trimmedDomain,
+              reason: trimmedReason,
+            });
+            setTransientFeedback("Domain blocked.");
+            setDomainToBan("");
+            setDomainReason("");
+            await reloadCurrentView();
+          });
+        },
       });
     },
     [reloadCurrentView, runAction, setTransientFeedback],
   );
 
   const handleUnbanDomain = useCallback(
-    async (id: number) => {
-      if (!window.confirm("Remove this domain from the banned list?")) {
-        return;
-      }
-
-      await runAction(`unban-domain-${id}`, async () => {
-        await api.delete(`/admin/banned-domains/${id}`);
-        setTransientFeedback("Domain unblocked.");
-        await reloadCurrentView();
+    (id: number) => {
+      setConfirmRequest({
+        title: "Remove block",
+        message: "Remove this domain from the banned list?",
+        confirmLabel: "Remove block",
+        action: async () => {
+          await runAction(`unban-domain-${id}`, async () => {
+            await api.delete(`/admin/banned-domains/${id}`);
+            setTransientFeedback("Domain unblocked.");
+            await reloadCurrentView();
+          });
+        },
       });
     },
     [reloadCurrentView, runAction, setTransientFeedback],
   );
 
   const handleBanIp = useCallback(
-    async (e: FormEvent) => {
+    (e: FormEvent) => {
       e.preventDefault();
       const trimmedIp = ipToBan.trim();
       const trimmedReason = banReason.trim();
 
       if (trimmedIp.length < 3) {
-        setFeedback("Enter a longer IP address or hostname.");
+        setFeedback({
+          message: "Enter a longer IP address or hostname.",
+          severity: "error",
+        });
         return;
       }
 
-      await runAction(`ban-ip-${trimmedIp}`, async () => {
-        await api.post("/admin/ips/ban", {
-          ip: trimmedIp,
-          reason: trimmedReason,
-        });
-        setTransientFeedback("IP address blocked.");
-        setIpToBan("");
-        setBanReason("");
-        await reloadCurrentView();
+      setConfirmRequest({
+        title: "Block address",
+        message: `Block ${trimmedIp} so it cannot reach the service across the platform?`,
+        confirmLabel: "Block address",
+        action: async () => {
+          await runAction(`ban-ip-${trimmedIp}`, async () => {
+            await api.post("/admin/ips/ban", {
+              ip: trimmedIp,
+              reason: trimmedReason,
+            });
+            setTransientFeedback("IP address blocked.");
+            setIpToBan("");
+            setBanReason("");
+            await reloadCurrentView();
+          });
+        },
       });
     },
     [
@@ -396,361 +465,491 @@ export default function Admin() {
   );
 
   const handleUnbanIp = useCallback(
-    async (id: number) => {
-      if (
-        !window.confirm(
-          "Remove this IP or hostname from the blocked list?",
-        )
-      ) {
-        return;
-      }
-
-      await runAction(`unban-ip-${id}`, async () => {
-        await api.delete(`/admin/ips/${id}`);
-        setTransientFeedback("Address unblocked.");
-        await reloadCurrentView();
+    (id: number) => {
+      setConfirmRequest({
+        title: "Remove block",
+        message: "Remove this IP or hostname from the blocked list?",
+        confirmLabel: "Remove block",
+        action: async () => {
+          await runAction(`unban-ip-${id}`, async () => {
+            await api.delete(`/admin/ips/${id}`);
+            setTransientFeedback("Address unblocked.");
+            await reloadCurrentView();
+          });
+        },
       });
     },
     [reloadCurrentView, runAction, setTransientFeedback],
   );
 
-  const rows = useMemo(() => viewData.items, [viewData.items]);
-
   if (isInitializing) {
-    return (
-      <div className="loading-screen" aria-live="polite" aria-busy="true">
-        <div className="loading-stack">
-          <div className="spinner" aria-hidden="true" />
-          <p>Loading moderation tools...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen label="Loading moderation tools..." />;
   }
 
+  const rows = viewData.items;
+
   return (
-    <div className="app-shell">
-      <Navbar user={user} />
+    <AppShell user={user}>
+      <Box sx={{ mb: 4, maxWidth: 720 }}>
+        <Chip
+          label="Admin control"
+          size="small"
+          variant="outlined"
+          color="primary"
+          icon={<ShieldRounded />}
+          sx={{ mb: 1.5 }}
+        />
+        <Typography variant="h1" component="h1">
+          Moderation
+        </Typography>
+        <Typography variant="body1" color="textSecondary" sx={{ mt: 1 }}>
+          Move through domains, users, banned users, banned domains, and
+          blocked IPs with dedicated paginated views instead of a single
+          capped feed.
+        </Typography>
+      </Box>
 
-      <main className="app-main stack-lg">
-        <header className="page-header surface-enter moderation-header">
-          <div className="eyebrow">
-            <ShieldAlert className="w-4 h-4" /> Admin control
-          </div>
-          <h1 className="page-title page-title--compact">Moderation</h1>
-          <p className="page-copy">
-            Move through domains, users, banned users, banned domains, and
-            blocked IPs with dedicated paginated views instead of a single
-            capped feed.
-          </p>
-        </header>
-
-        {pageError ? (
-          <section className="panel surface-enter">
-            <div
-              className="status-banner status-banner--danger"
-              role="alert"
-            >
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div className="stack-sm">
-                <strong>Moderation unavailable</strong>
-                <span>{pageError}</span>
-              </div>
-            </div>
-            <div className="panel-actions mt-6">
-              <button
-                type="button"
-                onClick={() => {
-                  void reloadCurrentView();
-                }}
-                className="button button-secondary"
-              >
-                Try again
-              </button>
-            </div>
-          </section>
-        ) : null}
-
-        {feedback ? (
-          <div className="status-banner" role="status" aria-live="polite">
-            <span>{feedback}</span>
-          </div>
-        ) : null}
-
-        <section className="panel surface-enter moderation-queue-panel">
-          <div className="panel__header">
-            <p className="eyebrow">Moderation queues</p>
-            <h2 className="panel__title">Choose a paginated view</h2>
-            <p className="panel__copy">
-              Each queue loads its own page so large installations stay
-              responsive.
-            </p>
-          </div>
-
-          <div className="admin-view-grid">
-            {(Object.keys(viewMeta) as AdminView[]).map((view) => {
-              const Icon = viewMeta[view].icon;
-              const isActive = activeView === view;
-
-              return (
-                <button
-                  key={view}
-                  type="button"
-                  className={`button admin-view-button ${isActive ? "button-secondary admin-view-button--active" : "button-ghost"}`}
-                  onClick={() => setActiveView(view)}
-                >
-                  <span className="admin-view-button__title">
-                    <Icon className="w-4 h-4" /> {viewMeta[view].title}
-                  </span>
-                  <span className="admin-view-button__copy">
-                    {viewMeta[view].eyebrow}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="stack-lg surface-enter">
-          <div className="table-shell">
-            <div className="table-toolbar">
-              <div>
-                <p className="eyebrow">{currentMeta.eyebrow}</p>
-                <h2 className="panel__title">{currentMeta.title}</h2>
-                <p className="panel__copy">{currentMeta.description}</p>
-              </div>
-              <div className="table-toolbar__meta">
-                <span className="tag">
-                  {viewData.pagination.total} total entries
-                </span>
-                <span className="tag">
-                  Page {viewData.pagination.page} of{" "}
-                  {viewData.pagination.totalPages}
-                </span>
-              </div>
-            </div>
-
-            <div className="table-scroll">
-              {isViewLoading ? (
-                <div className="empty-panel">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <h3 className="empty-panel__title">
-                    Loading {currentMeta.title.toLowerCase()}...
-                  </h3>
-                </div>
-              ) : rows.length === 0 ? (
-                <div className="empty-panel">
-                  <h3 className="empty-panel__title">
-                    {currentMeta.emptyTitle}
-                  </h3>
-                  <p className="empty-panel__copy">
-                    {currentMeta.emptyCopy}
-                  </p>
-                </div>
-              ) : activeView === "domains" ? (
-                <DomainsTable
-                  domains={rows as Domain[]}
-                  pendingActionKey={pendingActionKey}
-                  onDeleteDomain={handleDeleteDomain}
-                  onBanDomain={(domain) =>
-                    handleBanDomain(domain, "", true)
-                  }
-                  onToggleUserBan={handleToggleUserBan}
-                />
-              ) : activeView === "users" ||
-                activeView === "banned-users" ? (
-                <UsersTable
-                  users={rows as AdminUserRow[]}
-                  pendingActionKey={pendingActionKey}
-                  onToggleUserBan={handleToggleUserBan}
-                />
-              ) : activeView === "banned-domains" ? (
-                <BannedDomainsTable
-                  domains={rows as BannedDomain[]}
-                  pendingActionKey={pendingActionKey}
-                  onUnbanDomain={handleUnbanDomain}
-                />
-              ) : (
-                <BannedIpsTable
-                  ips={rows as BannedIp[]}
-                  pendingActionKey={pendingActionKey}
-                  onUnbanIp={handleUnbanIp}
-                />
-              )}
-            </div>
-
-            <PaginationControls
-              pagination={viewData.pagination}
-              isLoading={isViewLoading}
-              onPageChange={(page) => {
-                setPages((prev) => ({
-                  ...prev,
-                  [activeView]: page,
-                }));
+      {pageError ? (
+        <Alert
+          severity="error"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                void reloadCurrentView();
               }}
+            >
+              Try again
+            </Button>
+          }
+        >
+          <Typography variant="subtitle2">
+            Moderation unavailable
+          </Typography>
+          <Typography variant="body2" dir="auto">
+            {pageError}
+          </Typography>
+        </Alert>
+      ) : null}
+
+      <Paper variant="outlined" sx={{ borderRadius: 3, mb: 3 }}>
+        <Tabs
+          value={activeView}
+          onChange={(_event, value: AdminView) => setActiveView(value)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            borderBottom: 1,
+            borderColor: "divider",
+            px: 1,
+            minWidth: 0,
+          }}
+        >
+          {(Object.keys(viewMeta) as AdminView[]).map((view) => (
+            <Tab
+              key={view}
+              value={view}
+              icon={viewMeta[view].icon}
+              iconPosition="start"
+              label={viewMeta[view].title}
             />
-          </div>
+          ))}
+        </Tabs>
 
-          <section className="admin-controls-grid">
-            <section className="panel panel--soft moderation-side-panel moderation-side-panel--domain">
-              <div className="panel__header">
-                <p className="eyebrow">
-                  <ShieldAlert className="w-4 h-4" /> Domain control
-                </p>
-                <h2 className="panel__title">Block a domain</h2>
-                <p className="panel__copy">
-                  Prevent a route from being registered again, even if it
-                  is not in the active domains list right now.
-                </p>
-              </div>
+        <Box
+          sx={{
+            px: { xs: 2, sm: 2.5 },
+            py: 2,
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            justifyContent: "space-between",
+            alignItems: { xs: "flex-start", sm: "center" },
+            gap: 1.5,
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="overline" color="textSecondary">
+              {currentMeta.eyebrow}
+            </Typography>
+            <Typography variant="h4" component="h2">
+              {currentMeta.title}
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ maxWidth: 620, mt: 0.5 }}
+            >
+              {currentMeta.description}
+            </Typography>
+          </Box>
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{ flexShrink: 0, flexWrap: "wrap" }}
+          >
+            <Chip
+              label={`${viewData.pagination.total} total entries`}
+              size="small"
+              variant="outlined"
+            />
+            <Chip
+              label={`Page ${viewData.pagination.page} of ${viewData.pagination.totalPages}`}
+              size="small"
+              variant="outlined"
+            />
+          </Stack>
+        </Box>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void handleBanDomain(domainToBan, domainReason);
+        <Divider />
+
+        {isViewLoading ? (
+          <Box
+            sx={{
+              py: 6,
+              px: 3,
+              display: "grid",
+              placeItems: "center",
+              gap: 1.5,
+            }}
+            aria-live="polite"
+          >
+            <CircularProgress size={28} />
+            <Typography variant="body2" color="textSecondary">
+              Loading {currentMeta.title.toLowerCase()}...
+            </Typography>
+          </Box>
+        ) : rows.length === 0 ? (
+          <Box sx={{ py: 6, px: 3, textAlign: "center" }}>
+            <Box
+              sx={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                mx: "auto",
+                display: "grid",
+                placeItems: "center",
+                bgcolor: alpha(theme.palette.primary.main, 0.12),
+                color: "primary.main",
+              }}
+            >
+              <InboxRounded />
+            </Box>
+            <Typography variant="h6" sx={{ mt: 1.5 }}>
+              {currentMeta.emptyTitle}
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ maxWidth: 420, mx: "auto", mt: 0.5 }}
+            >
+              {currentMeta.emptyCopy}
+            </Typography>
+          </Box>
+        ) : activeView === "domains" ? (
+          <DomainsTable
+            domains={rows as Domain[]}
+            pendingActionKey={pendingActionKey}
+            onDeleteDomain={handleDeleteDomain}
+            onBanDomain={(domain) =>
+              handleBanDomain(domain, "", true)
+            }
+            onToggleUserBan={handleToggleUserBan}
+          />
+        ) : activeView === "users" ||
+          activeView === "banned-users" ? (
+          <UsersTable
+            users={rows as AdminUserRow[]}
+            pendingActionKey={pendingActionKey}
+            onToggleUserBan={handleToggleUserBan}
+          />
+        ) : activeView === "banned-domains" ? (
+          <BannedDomainsTable
+            domains={rows as BannedDomain[]}
+            pendingActionKey={pendingActionKey}
+            onUnbanDomain={handleUnbanDomain}
+          />
+        ) : (
+          <BannedIpsTable
+            ips={rows as BannedIp[]}
+            pendingActionKey={pendingActionKey}
+            onUnbanIp={handleUnbanIp}
+          />
+        )}
+
+        {!isViewLoading && rows.length > 0 ? <Divider /> : null}
+
+        <Box
+          sx={{
+            px: { xs: 2, sm: 2.5 },
+            py: 2,
+            display: "flex",
+            flexDirection: { xs: "column", sm: "row" },
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1.5,
+          }}
+        >
+          <Typography variant="body2" color="textSecondary">
+            Showing up to {viewData.pagination.pageSize} items per page ·{" "}
+            {viewData.pagination.total} total entries
+          </Typography>
+          <Pagination
+            count={Math.max(1, viewData.pagination.totalPages)}
+            page={viewData.pagination.page}
+            onChange={(_event, page) =>
+              setPages((prev) => ({ ...prev, [activeView]: page }))
+            }
+            disabled={isViewLoading}
+          />
+        </Box>
+      </Paper>
+
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+          gap: 2.5,
+        }}
+      >
+        <Card>
+          <CardContent>
+            <Typography variant="overline" color="textSecondary">
+              Domain control
+            </Typography>
+            <Typography variant="h4" component="h2">
+              Block a domain
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ mt: 0.5, mb: 2.5 }}
+            >
+              Prevent a route from being registered again, even if it is not
+              in the active domains list right now.
+            </Typography>
+
+            <Box
+              component="form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handleBanDomain(domainToBan, domainReason);
+              }}
+              sx={{ display: "grid", gap: 2 }}
+            >
+              <TextField
+                label="Full domain"
+                required
+                fullWidth
+                value={domainToBan}
+                onChange={(event) => setDomainToBan(event.target.value)}
+                placeholder="app.example.com"
+                helperText="Example: app.example.com"
+                slotProps={{
+                  htmlInput: {
+                    maxLength: 255,
+                    autoCapitalize: "none",
+                    autoCorrect: "off",
+                    spellCheck: false,
+                    dir: "auto",
+                  },
                 }}
-                className="field-grid"
-              >
-                <div className="field">
-                  <label htmlFor="domainInput" className="field-label">
-                    Full domain
-                  </label>
-                  <span className="field-hint">
-                    Example: app.example.com
-                  </span>
-                  <input
-                    id="domainInput"
-                    type="text"
-                    required
-                    maxLength={255}
-                    value={domainToBan}
-                    onChange={(e) => setDomainToBan(e.target.value)}
-                    placeholder="app.example.com"
-                    className="text-field"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    dir="auto"
-                  />
-                </div>
+              />
 
-                <div className="field">
-                  <label
-                    htmlFor="domainReasonInput"
-                    className="field-label"
-                  >
-                    Reason
-                  </label>
-                  <span className="field-hint">
-                    Optional context for future moderation reviews.
-                  </span>
-                  <input
-                    id="domainReasonInput"
-                    type="text"
-                    maxLength={160}
-                    value={domainReason}
-                    onChange={(e) => setDomainReason(e.target.value)}
-                    placeholder="Malware, abuse, or impersonation"
-                    className="text-field"
-                    dir="auto"
-                  />
-                </div>
+              <TextField
+                label="Reason"
+                fullWidth
+                value={domainReason}
+                onChange={(event) => setDomainReason(event.target.value)}
+                placeholder="Malware, abuse, or impersonation"
+                helperText="Optional context for future moderation reviews."
+                slotProps={{
+                  htmlInput: {
+                    maxLength: 160,
+                    dir: "auto",
+                  },
+                }}
+              />
 
-                <button
-                  type="submit"
-                  disabled={
-                    pendingActionKey ===
-                      `ban-domain-${domainToBan.trim().toLowerCase()}` ||
-                    !domainToBan.trim()
-                  }
-                  className="button button-danger"
-                >
-                  {pendingActionKey ===
+              <Button
+                type="submit"
+                color="error"
+                variant="contained"
+                disabled={
+                  pendingActionKey ===
+                    `ban-domain-${domainToBan.trim().toLowerCase()}` ||
+                  !domainToBan.trim()
+                }
+                startIcon={
+                  pendingActionKey ===
                   `ban-domain-${domainToBan.trim().toLowerCase()}` ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <CircularProgress size={16} color="inherit" />
                   ) : (
-                    <Ban className="w-4 h-4" />
-                  )}
-                  Block domain
-                </button>
-              </form>
-            </section>
+                    <BlockRounded />
+                  )
+                }
+                sx={{ justifySelf: "start" }}
+              >
+                Block domain
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
 
-            <section className="panel panel--soft moderation-side-panel moderation-side-panel--network">
-              <div className="panel__header">
-                <p className="eyebrow">
-                  <ServerOff className="w-4 h-4" /> Network control
-                </p>
-                <h2 className="panel__title">Block an IP or hostname</h2>
-                <p className="panel__copy">
-                  Use this when a source should stop reaching the service
-                  across the platform.
-                </p>
-              </div>
+        <Card>
+          <CardContent>
+            <Typography variant="overline" color="textSecondary">
+              Network control
+            </Typography>
+            <Typography variant="h4" component="h2">
+              Block an IP or hostname
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ mt: 0.5, mb: 2.5 }}
+            >
+              Use this when a source should stop reaching the service across
+              the platform.
+            </Typography>
 
-              <form onSubmit={handleBanIp} className="field-grid">
-                <div className="field">
-                  <label htmlFor="ipInput" className="field-label">
-                    IP address or hostname
-                  </label>
-                  <span className="field-hint">
-                    Example: 192.168.1.100 or abusive-host.example
-                  </span>
-                  <input
-                    id="ipInput"
-                    type="text"
-                    required
-                    maxLength={255}
-                    value={ipToBan}
-                    onChange={(e) => setIpToBan(e.target.value)}
-                    placeholder="192.168.1.100"
-                    className="text-field"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    dir="auto"
-                  />
-                </div>
+            <Box
+              component="form"
+              onSubmit={handleBanIp}
+              sx={{ display: "grid", gap: 2 }}
+            >
+              <TextField
+                label="IP address or hostname"
+                required
+                fullWidth
+                value={ipToBan}
+                onChange={(event) => setIpToBan(event.target.value)}
+                placeholder="192.168.1.100"
+                helperText="Example: 192.168.1.100 or abusive-host.example"
+                slotProps={{
+                  htmlInput: {
+                    maxLength: 255,
+                    autoCapitalize: "none",
+                    autoCorrect: "off",
+                    spellCheck: false,
+                    dir: "auto",
+                  },
+                }}
+              />
 
-                <div className="field">
-                  <label htmlFor="reasonInput" className="field-label">
-                    Reason
-                  </label>
-                  <span className="field-hint">
-                    Optional context for future moderation reviews.
-                  </span>
-                  <input
-                    id="reasonInput"
-                    type="text"
-                    maxLength={160}
-                    value={banReason}
-                    onChange={(e) => setBanReason(e.target.value)}
-                    placeholder="Phishing or repeated abuse"
-                    className="text-field"
-                    dir="auto"
-                  />
-                </div>
+              <TextField
+                label="Reason"
+                fullWidth
+                value={banReason}
+                onChange={(event) => setBanReason(event.target.value)}
+                placeholder="Phishing or repeated abuse"
+                helperText="Optional context for future moderation reviews."
+                slotProps={{
+                  htmlInput: {
+                    maxLength: 160,
+                    dir: "auto",
+                  },
+                }}
+              />
 
-                <button
-                  type="submit"
-                  disabled={
-                    pendingActionKey === `ban-ip-${ipToBan.trim()}` ||
-                    !ipToBan.trim()
-                  }
-                  className="button button-danger"
-                >
-                  {pendingActionKey === `ban-ip-${ipToBan.trim()}` ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+              <Button
+                type="submit"
+                color="error"
+                variant="contained"
+                disabled={
+                  pendingActionKey === `ban-ip-${ipToBan.trim()}` ||
+                  !ipToBan.trim()
+                }
+                startIcon={
+                  pendingActionKey === `ban-ip-${ipToBan.trim()}` ? (
+                    <CircularProgress size={16} color="inherit" />
                   ) : (
-                    <Ban className="w-4 h-4" />
-                  )}
-                  Block address
-                </button>
-              </form>
-            </section>
-          </section>
-        </section>
-      </main>
-    </div>
+                    <BlockRounded />
+                  )
+                }
+                sx={{ justifySelf: "start" }}
+              >
+                Block address
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
+
+      <ConfirmDialog
+        open={confirmRequest !== null}
+        title={confirmRequest?.title ?? ""}
+        message={confirmRequest?.message ?? ""}
+        confirmLabel={confirmRequest?.confirmLabel ?? "Confirm"}
+        loading={isConfirming}
+        onConfirm={() => {
+          void handleConfirmAction();
+        }}
+        onClose={() => setConfirmRequest(null)}
+      />
+
+      <Snackbar
+        open={feedback !== null}
+        autoHideDuration={4000}
+        onClose={() => setFeedback(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setFeedback(null)}
+          severity={feedback?.severity ?? "success"}
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {feedback?.message}
+        </Alert>
+      </Snackbar>
+    </AppShell>
+  );
+}
+
+function ActionButton({
+  pending,
+  color = "primary",
+  variant = "outlined",
+  startIcon,
+  children,
+  onClick,
+  disabled = false,
+}: {
+  pending?: boolean;
+  color?:
+    | "primary"
+    | "secondary"
+    | "error"
+    | "success"
+    | "info"
+    | "warning"
+    | "inherit";
+  variant?: "outlined" | "text" | "contained";
+  startIcon: ReactNode;
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Button
+      size="small"
+      color={color}
+      variant={variant}
+      onClick={onClick}
+      disabled={disabled || pending}
+      startIcon={
+        pending ? (
+          <CircularProgress size={14} color="inherit" />
+        ) : (
+          startIcon
+        )
+      }
+    >
+      {children}
+    </Button>
   );
 }
 
@@ -763,111 +962,147 @@ function DomainsTable({
 }: {
   domains: Domain[];
   pendingActionKey: string | null;
-  onDeleteDomain: (id: number) => Promise<void>;
-  onBanDomain: (domain: string) => Promise<void>;
+  onDeleteDomain: (id: number) => void;
+  onBanDomain: (domain: string) => void;
   onToggleUserBan: (
     userId: number,
     currentStatus: boolean,
-  ) => Promise<void>;
+  ) => void;
 }) {
   return (
-    <table className="data-table">
-      <caption className="sr-only">
-        Registered domains and moderation actions.
-      </caption>
-      <thead>
-        <tr>
-          <th>Domain</th>
-          <th>Target</th>
-          <th>User</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {domains.map((domain) => {
-          const userId = domain.user?.id;
-          const isUserBanned = domain.user?.isBanned ?? false;
+    <TableContainer sx={{ overflowX: "auto" }}>
+      <Table sx={{ minWidth: 720 }}>
+        <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+          Registered domains and moderation actions.
+        </caption>
+        <TableHead>
+          <TableRow>
+            <TableCell>Domain</TableCell>
+            <TableCell>Target</TableCell>
+            <TableCell>User</TableCell>
+            <TableCell>Created</TableCell>
+            <TableCell>Actions</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {domains.map((domain) => {
+            const userId = domain.user?.id;
+            const isUserBanned = domain.user?.isBanned ?? false;
 
-          return (
-            <tr key={domain.id}>
-              <td>
-                <strong className="text-wrap-anywhere" dir="auto">
-                  {domain.subdomain}
-                </strong>
-              </td>
-              <td className="text-wrap-anywhere" dir="auto">
-                {domain.hostname}:{domain.port}
-              </td>
-              <td className="text-wrap-anywhere" dir="auto">
-                <strong>{domain.user?.name || "Unknown user"}</strong>
-                <div className="table-note">
-                  {domain.user?.email || "No email"}
-                </div>
-              </td>
-              <td>
-                {domain.createdAt ? formatDate(domain.createdAt) : "-"}
-              </td>
-              <td>
-                <div className="nav-actions">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (userId != null) {
-                        void onToggleUserBan(userId, isUserBanned);
-                      }
+            return (
+              <TableRow key={domain.id}>
+                <TableCell>
+                  <Typography
+                    dir="auto"
+                    sx={{
+                      fontFamily: FONT_MONO,
+                      fontWeight: 600,
+                      fontSize: "0.9rem",
+                      overflowWrap: "anywhere",
                     }}
-                    className={`button ${isUserBanned ? "button-secondary" : "button-ghost"}`}
-                    disabled={
-                      userId == null ||
-                      pendingActionKey === `user-${userId}`
-                    }
                   >
-                    {pendingActionKey === `user-${userId}` ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Ban className="w-4 h-4" />
-                    )}
-                    {isUserBanned ? "Unban user" : "Ban user"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void onBanDomain(domain.subdomain)}
-                    className="button button-danger"
-                    disabled={
-                      pendingActionKey === `ban-domain-${domain.subdomain}`
-                    }
+                    {domain.subdomain}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography
+                    dir="auto"
+                    sx={{
+                      fontFamily: FONT_MONO,
+                      fontSize: "0.85rem",
+                      color: "text.secondary",
+                      overflowWrap: "anywhere",
+                    }}
                   >
-                    {pendingActionKey ===
-                    `ban-domain-${domain.subdomain}` ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ShieldAlert className="w-4 h-4" />
-                    )}
-                    Ban domain
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void onDeleteDomain(domain.id)}
-                    className="button button-secondary"
-                    disabled={
-                      pendingActionKey === `domain-delete-${domain.id}`
-                    }
+                    {domain.hostname}:{domain.port}
+                  </Typography>
+                </TableCell>
+                <TableCell sx={{ minWidth: 160 }}>
+                  <Typography
+                    dir="auto"
+                    sx={{ fontWeight: 600, overflowWrap: "anywhere" }}
                   >
-                    {pendingActionKey === `domain-delete-${domain.id}` ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                    Remove
-                  </button>
-                </div>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                    {domain.user?.name || "Unknown user"}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="textSecondary"
+                    dir="auto"
+                    sx={{ display: "block", overflowWrap: "anywhere" }}
+                  >
+                    {domain.user?.email || "No email"}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2" color="textSecondary">
+                    {domain.createdAt ? formatDate(domain.createdAt) : "-"}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    useFlexGap
+                    sx={{ flexWrap: "wrap" }}
+                  >
+                    <ActionButton
+                      pending={
+                        userId != null &&
+                        pendingActionKey === `user-${userId}`
+                      }
+                      color={isUserBanned ? "success" : "error"}
+                      startIcon={
+                        isUserBanned ? (
+                          <CheckCircleRounded fontSize="small" />
+                        ) : (
+                          <BlockRounded fontSize="small" />
+                        )
+                      }
+                      disabled={userId == null}
+                      onClick={() => {
+                        if (userId != null) {
+                          onToggleUserBan(userId, isUserBanned);
+                        }
+                      }}
+                    >
+                      {isUserBanned ? "Unban user" : "Ban user"}
+                    </ActionButton>
+
+                    <ActionButton
+                      pending={
+                        pendingActionKey ===
+                        `ban-domain-${domain.subdomain}`
+                      }
+                      color="error"
+                      startIcon={
+                        <PublicOffRounded fontSize="small" />
+                      }
+                      onClick={() => onBanDomain(domain.subdomain)}
+                    >
+                      Ban domain
+                    </ActionButton>
+
+                    <ActionButton
+                      pending={
+                        pendingActionKey ===
+                        `domain-delete-${domain.id}`
+                      }
+                      variant="text"
+                      startIcon={
+                        <DeleteOutlineRounded fontSize="small" />
+                      }
+                      onClick={() => onDeleteDomain(domain.id)}
+                    >
+                      Remove
+                    </ActionButton>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -881,63 +1116,85 @@ function UsersTable({
   onToggleUserBan: (
     userId: number,
     currentStatus: boolean,
-  ) => Promise<void>;
+  ) => void;
 }) {
   return (
-    <table className="data-table">
-      <caption className="sr-only">Users and moderation actions.</caption>
-      <thead>
-        <tr>
-          <th>User</th>
-          <th>GitHub ID</th>
-          <th>Domains</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {users.map((entry) => (
-          <tr key={entry.id}>
-            <td className="text-wrap-anywhere" dir="auto">
-              <strong>{entry.name}</strong>
-              <div className="table-note">{entry.email}</div>
-            </td>
-            <td>{entry.githubId}</td>
-            <td>{entry.domainCount}</td>
-            <td>
-              <span
-                className={`tag ${entry.isBanned ? "tag--danger" : "tag--success"}`}
-              >
-                {entry.isBanned ? "Banned" : "Active"}
-              </span>
-            </td>
-            <td>
-              <button
-                type="button"
-                onClick={() =>
-                  void onToggleUserBan(entry.id, entry.isBanned)
-                }
-                className={
-                  entry.isBanned
-                    ? "button button-secondary"
-                    : "button button-danger"
-                }
-                disabled={pendingActionKey === `user-${entry.id}`}
-              >
-                {pendingActionKey === `user-${entry.id}` ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : entry.isBanned ? (
-                  <ShieldOff className="w-4 h-4" />
-                ) : (
-                  <Ban className="w-4 h-4" />
-                )}
-                {entry.isBanned ? "Unban user" : "Ban user"}
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <TableContainer sx={{ overflowX: "auto" }}>
+      <Table sx={{ minWidth: 680 }}>
+        <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+          Users and moderation actions.
+        </caption>
+        <TableHead>
+          <TableRow>
+            <TableCell>User</TableCell>
+            <TableCell>GitHub ID</TableCell>
+            <TableCell>Domains</TableCell>
+            <TableCell>Status</TableCell>
+            <TableCell>Actions</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {users.map((entry) => (
+            <TableRow key={entry.id}>
+              <TableCell sx={{ minWidth: 180 }}>
+                <Typography
+                  dir="auto"
+                  sx={{ fontWeight: 600, overflowWrap: "anywhere" }}
+                >
+                  {entry.name}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="textSecondary"
+                  dir="auto"
+                  sx={{ display: "block", overflowWrap: "anywhere" }}
+                >
+                  {entry.email}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography
+                  sx={{ fontFamily: FONT_MONO, fontSize: "0.9rem" }}
+                >
+                  {entry.githubId}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography sx={{ fontWeight: 600 }}>
+                  {entry.domainCount}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Chip
+                  size="small"
+                  label={entry.isBanned ? "Banned" : "Active"}
+                  color={entry.isBanned ? "error" : "success"}
+                  variant="outlined"
+                />
+              </TableCell>
+              <TableCell>
+                <ActionButton
+                  pending={pendingActionKey === `user-${entry.id}`}
+                  color={entry.isBanned ? "success" : "error"}
+                  startIcon={
+                    entry.isBanned ? (
+                      <CheckCircleRounded fontSize="small" />
+                    ) : (
+                      <BlockRounded fontSize="small" />
+                    )
+                  }
+                  onClick={() =>
+                    onToggleUserBan(entry.id, entry.isBanned)
+                  }
+                >
+                  {entry.isBanned ? "Unban user" : "Ban user"}
+                </ActionButton>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -948,52 +1205,71 @@ function BannedDomainsTable({
 }: {
   domains: BannedDomain[];
   pendingActionKey: string | null;
-  onUnbanDomain: (id: number) => Promise<void>;
+  onUnbanDomain: (id: number) => void;
 }) {
   return (
-    <table className="data-table">
-      <caption className="sr-only">
-        Blocked domains and unban actions.
-      </caption>
-      <thead>
-        <tr>
-          <th>Domain</th>
-          <th>Reason</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {domains.map((entry) => (
-          <tr key={entry.id}>
-            <td className="text-wrap-anywhere" dir="auto">
-              <strong className="text-highlight text-highlight--warm">
-                {entry.domain}
-              </strong>
-            </td>
-            <td className="text-wrap-anywhere" dir="auto">
-              {entry.reason || "No reason recorded"}
-            </td>
-            <td>{formatDate(entry.createdAt)}</td>
-            <td>
-              <button
-                type="button"
-                onClick={() => void onUnbanDomain(entry.id)}
-                className="button button-secondary"
-                disabled={pendingActionKey === `unban-domain-${entry.id}`}
-              >
-                {pendingActionKey === `unban-domain-${entry.id}` ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ShieldOff className="w-4 h-4" />
-                )}
-                Remove block
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <TableContainer sx={{ overflowX: "auto" }}>
+      <Table sx={{ minWidth: 640 }}>
+        <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+          Blocked domains and unban actions.
+        </caption>
+        <TableHead>
+          <TableRow>
+            <TableCell>Domain</TableCell>
+            <TableCell>Reason</TableCell>
+            <TableCell>Created</TableCell>
+            <TableCell>Actions</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {domains.map((entry) => (
+            <TableRow key={entry.id}>
+              <TableCell>
+                <Typography
+                  dir="auto"
+                  sx={{
+                    fontFamily: FONT_MONO,
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {entry.domain}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  dir="auto"
+                  sx={{ overflowWrap: "anywhere" }}
+                >
+                  {entry.reason || "No reason recorded"}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" color="textSecondary">
+                  {formatDate(entry.createdAt)}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <ActionButton
+                  pending={
+                    pendingActionKey === `unban-domain-${entry.id}`
+                  }
+                  startIcon={
+                    <CheckCircleRounded fontSize="small" />
+                  }
+                  onClick={() => onUnbanDomain(entry.id)}
+                >
+                  Remove block
+                </ActionButton>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -1004,85 +1280,68 @@ function BannedIpsTable({
 }: {
   ips: BannedIp[];
   pendingActionKey: string | null;
-  onUnbanIp: (id: number) => Promise<void>;
+  onUnbanIp: (id: number) => void;
 }) {
   return (
-    <table className="data-table">
-      <caption className="sr-only">
-        Blocked IP addresses and hostnames.
-      </caption>
-      <thead>
-        <tr>
-          <th>Address</th>
-          <th>Reason</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {ips.map((entry) => (
-          <tr key={entry.id}>
-            <td className="text-wrap-anywhere" dir="auto">
-              <strong className="text-highlight">{entry.ip}</strong>
-            </td>
-            <td className="text-wrap-anywhere" dir="auto">
-              {entry.reason || "No reason recorded"}
-            </td>
-            <td>{formatDate(entry.createdAt)}</td>
-            <td>
-              <button
-                type="button"
-                onClick={() => void onUnbanIp(entry.id)}
-                className="button button-secondary"
-                disabled={pendingActionKey === `unban-ip-${entry.id}`}
-              >
-                {pendingActionKey === `unban-ip-${entry.id}` ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ShieldOff className="w-4 h-4" />
-                )}
-                Remove block
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function PaginationControls({
-  pagination,
-  isLoading,
-  onPageChange,
-}: {
-  pagination: PaginationMeta;
-  isLoading: boolean;
-  onPageChange: (page: number) => void;
-}) {
-  return (
-    <div className="pagination-bar">
-      <div className="pagination-summary">
-        Showing up to {pagination.pageSize} items per page.
-      </div>
-      <div className="panel-actions">
-        <button
-          type="button"
-          className="button button-ghost"
-          onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
-          disabled={!pagination.hasPrevious || isLoading}
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          className="button button-secondary"
-          onClick={() => onPageChange(pagination.page + 1)}
-          disabled={!pagination.hasNext || isLoading}
-        >
-          Next
-        </button>
-      </div>
-    </div>
+    <TableContainer sx={{ overflowX: "auto" }}>
+      <Table sx={{ minWidth: 640 }}>
+        <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+          Blocked IP addresses and hostnames.
+        </caption>
+        <TableHead>
+          <TableRow>
+            <TableCell>Address</TableCell>
+            <TableCell>Reason</TableCell>
+            <TableCell>Created</TableCell>
+            <TableCell>Actions</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {ips.map((entry) => (
+            <TableRow key={entry.id}>
+              <TableCell>
+                <Typography
+                  dir="auto"
+                  sx={{
+                    fontFamily: FONT_MONO,
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {entry.ip}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  dir="auto"
+                  sx={{ overflowWrap: "anywhere" }}
+                >
+                  {entry.reason || "No reason recorded"}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" color="textSecondary">
+                  {formatDate(entry.createdAt)}
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <ActionButton
+                  pending={pendingActionKey === `unban-ip-${entry.id}`}
+                  startIcon={
+                    <CheckCircleRounded fontSize="small" />
+                  }
+                  onClick={() => onUnbanIp(entry.id)}
+                >
+                  Remove block
+                </ActionButton>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }

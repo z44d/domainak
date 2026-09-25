@@ -91,6 +91,11 @@ async function request<T>(
   return { data: data as T };
 }
 
+export function getGithubAuthUrl() {
+  const base = import.meta.env.VITE_API_URL?.trim() || "/api";
+  return `${base}/auth/github`;
+}
+
 export const api = {
   get<T>(path: string, options?: RequestOptions) {
     return request<T>(path, { method: "GET" }, options);

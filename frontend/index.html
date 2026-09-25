@@ -1,20 +1,56 @@
 <!doctype html>
-<html lang="en" class="h-full">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta
       name="description"
       content="Claim a clean subdomain for your service and manage routing with calm, precise controls."
     />
+    <meta name="theme-color" content="#0B0F17" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Domainak" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://github.com" />
-    <link rel="preconnect" href="https://avatars.githubusercontent.com" crossorigin />
+    <link
+      rel="preconnect"
+      href="https://avatars.githubusercontent.com"
+      crossorigin
+    />
     <link rel="dns-prefetch" href="https://github.com" />
     <link rel="dns-prefetch" href="https://avatars.githubusercontent.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <title>Domainak</title>
+    <script>
+      // Apply the stored theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var mode = localStorage.getItem("domainak_theme_mode");
+          var dark = mode !== "light";
+          var root = document.documentElement;
+          root.style.colorScheme = dark ? "dark" : "light";
+          root.style.backgroundColor = dark ? "#0B0F17" : "#F5F7FB";
+        } catch (error) {
+          // Storage unavailable; keep the default dark theme.
+        }
+      })();
+    </script>
   </head>
-  <body class="min-h-screen antialiased">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
