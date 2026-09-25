@@ -44,6 +44,7 @@ import { AppShell } from "../components/AppShell";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LoadingScreen } from "../components/LoadingScreen";
 import { ApiError, api } from "../lib/api";
+import { subdomainFromHost, takePendingClaimHost } from "../lib/claim";
 import type { Domain, Stats, User } from "../lib/types";
 import { formatNumber, getErrorMessage } from "../lib/utils";
 import { FONT_DISPLAY, FONT_MONO } from "../theme/theme";
@@ -112,6 +113,25 @@ export default function Dashboard() {
             ...prev,
             domain: firstAvailableDomain,
           }));
+        }
+
+        // Prefill the claim form when arriving from the proxy's
+        // "subdomain not registered" page.
+        const pendingHost = takePendingClaimHost();
+
+        if (pendingHost) {
+          const claimedSubdomain = subdomainFromHost(
+            pendingHost,
+            availableRes.data.available,
+          );
+
+          if (claimedSubdomain.length >= 2) {
+            setFormData((prev) => ({
+              ...prev,
+              subdomain: claimedSubdomain,
+            }));
+            setShowAddForm(true);
+          }
         }
       } catch (error: unknown) {
         if (error instanceof ApiError && error.status === 401) {

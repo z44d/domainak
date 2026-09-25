@@ -18,9 +18,10 @@ import {
   useTheme,
 } from "@mui/material";
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { getGithubAuthUrl } from "../lib/api";
+import { savePendingClaimHost } from "../lib/claim";
 import { FONT_DISPLAY, FONT_MONO } from "../theme/theme";
 
 const features = [
@@ -55,15 +56,22 @@ const previewRoutes = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  // Set when arriving from the proxy's "subdomain not registered" page.
+  const claimHost = searchParams.get("subdomain")?.trim() ?? "";
 
   useEffect(() => {
+    if (claimHost) {
+      savePendingClaimHost(claimHost);
+    }
+
     const token = localStorage.getItem("session_token");
     if (token) {
       navigate("/dashboard", { replace: true });
     }
-  }, [navigate]);
+  }, [claimHost, navigate]);
 
   const handleLogin = () => {
     window.location.href = getGithubAuthUrl();
@@ -81,14 +89,29 @@ export default function Landing() {
         }}
       >
         <Box sx={{ display: "grid", gap: 2.5, minWidth: 0 }}>
-          <Chip
-            icon={<LanguageRounded />}
-            label="Domain routing for personal apps"
-            variant="outlined"
-            color="primary"
-            size="small"
-            sx={{ justifySelf: "start" }}
-          />
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            sx={{ flexWrap: "wrap" }}
+          >
+            <Chip
+              icon={<LanguageRounded />}
+              label="Domain routing for personal apps"
+              variant="outlined"
+              color="primary"
+              size="small"
+            />
+            {claimHost ? (
+              <Chip
+                label={`Ready to claim ${claimHost}`}
+                variant="filled"
+                color="primary"
+                size="small"
+                sx={{ fontFamily: FONT_MONO, maxWidth: "100%" }}
+              />
+            ) : null}
+          </Stack>
 
           <Typography variant="h1" component="h1">
             Claim a clean subdomain and point it where your service lives.
