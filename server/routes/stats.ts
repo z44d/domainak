@@ -7,17 +7,20 @@ import { jwtMiddleware } from "../middleware/auth";
 
 export const statsRouter = new Hono<{ Variables: { user: any } }>();
 
-// Helper function to get ISO week number
-function getISOWeek(date: Date) {
+// Returns the ISO week-numbering year and week for a date. The ISO year can
+// differ from the calendar year for days near January 1st, and the proxy
+// writes its weekly counter with `os.date("!%G-W%V")` (UTC, ISO year).
+function getISOWeekYear(date: Date) {
   const d = new Date(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
   );
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(
+  const week = Math.ceil(
     ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
   );
+  return { year: d.getUTCFullYear(), week };
 }
 
 statsRouter.use("*", jwtMiddleware);
@@ -44,10 +47,12 @@ statsRouter.get("/:domainId", async (c) => {
   const host = domain[0]?.subdomain;
 
   const now = new Date();
-  const year = requestedYear || now.getFullYear().toString();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const week = String(getISOWeek(now)).padStart(2, "0");
+  // All counter keys are written by the proxy in UTC, so read them in UTC too.
+  const year = requestedYear || now.getUTCFullYear().toString();
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(now.getUTCDate()).padStart(2, "0");
+  const isoWeek = getISOWeekYear(now);
+  const week = String(isoWeek.week).padStart(2, "0");
 
   const totalKey = `${host}:total`;
 
@@ -55,7 +60,7 @@ statsRouter.get("/:domainId", async (c) => {
   // Actually, if a specific year is requested, we shouldn't show the current daily/weekly
   // unless we specify it. But the frontend can just ignore what it doesn't need.
   const monthlyKey = `${host}:${year}-${month}`;
-  const weeklyKey = `${host}:${year}-W${week}`;
+  const weeklyKey = `${host}:${isoWeek.year}-W${week}`;
   const dailyKey = `${host}:${year}-${month}-${day}`;
 
   const [totalRes, monthlyRes, weeklyRes, dailyRes] = await Promise.all([

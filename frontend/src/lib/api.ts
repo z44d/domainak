@@ -116,6 +116,22 @@ export const api = {
       },
     );
   },
+  put<T>(path: string, body?: JsonBody, options?: MutationOptions) {
+    const headers = new Headers(options?.headers);
+    headers.set("Content-Type", "application/json");
+
+    return request<T>(
+      path,
+      {
+        method: "PUT",
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      {
+        ...options,
+        headers,
+      },
+    );
+  },
   delete<T>(path: string, options?: MutationOptions) {
     return request<T>(path, { method: "DELETE" }, options);
   },

@@ -17,6 +17,7 @@ services:
       - "2006:80"
     volumes:
       - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - ./unregistered.lua:/usr/local/openresty/nginx/conf/unregistered.lua:ro
     depends_on:
       redis:
         condition: service_started

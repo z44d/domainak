@@ -1,7 +1,7 @@
 import { count, desc, eq, sql } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import { db } from "../db";
-import { redis } from "../db/redis";
+import { deleteDomainRoute, redis } from "../db/redis";
 import {
   bannedDomainsTable,
   bannedIpsTable,
@@ -217,7 +217,7 @@ adminRouter.delete("/domains/:id", async (c) => {
     return c.json({ error: "Domain not found" }, 404);
   await db.delete(domainTable).where(eq(domainTable.id, id));
   const subdomain = domain[0]?.subdomain;
-  if (subdomain) await redis.del(subdomain);
+  if (subdomain) await deleteDomainRoute(subdomain);
   return c.json({ success: true });
 });
 
@@ -241,7 +241,10 @@ adminRouter.post("/banned-domains", async (c) => {
         .where(eq(domainTable.subdomain, domain));
     });
 
-    await Promise.all([redis.del(domain), setBannedDomainCache(domain)]);
+    await Promise.all([
+      deleteDomainRoute(domain),
+      setBannedDomainCache(domain),
+    ]);
     return c.json({ success: true });
   } catch (error: any) {
     if (error.code === "23505") {

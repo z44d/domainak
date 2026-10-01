@@ -19,6 +19,7 @@ Practical guide for agentic coding assistants working in `domainak`.
 - `.github/workflows/` - deployment workflows
 - `docker-compose.yaml` - container stack
 - `nginx.conf` - OpenResty routing config
+- `unregistered.lua` - Lua init file for OpenResty (unregistered-host page template); mounted/downloaded alongside `nginx.conf` because inline `_by_lua_block` code is limited by nginx's 8 KB config buffer
 - `setup.sh` - guided install/update script
 
 ## Package Tools

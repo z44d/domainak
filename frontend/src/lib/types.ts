@@ -10,8 +10,10 @@ export interface User {
 export interface Domain {
   id: number;
   subdomain: string;
-  hostname: string;
-  port: number;
+  hostname: string | null;
+  port: number | null;
+  targetUrl?: string | null;
+  mode?: "proxy" | "redirect";
   createdAt?: string;
   user?: User | null;
 }

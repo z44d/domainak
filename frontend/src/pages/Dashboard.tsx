@@ -3,6 +3,7 @@ import {
   CloseRounded,
   DeleteOutlineRounded,
   LanguageRounded,
+  ModeEditOutlineRounded,
   QueryStatsRounded,
 } from "@mui/icons-material";
 import {
@@ -36,6 +37,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useState,
 } from "react";
@@ -51,6 +53,19 @@ import { FONT_DISPLAY, FONT_MONO } from "../theme/theme";
 
 type DomainsResponse = { domains: Domain[] };
 type AvailableDomainsResponse = { available: string[] };
+
+type RouteMode = "proxy" | "redirect";
+
+interface TargetFormValue {
+  mode: RouteMode;
+  hostname: string;
+  port: string;
+  targetUrl: string;
+}
+
+type DomainUpdatePayload =
+  | { mode: "proxy"; hostname: string; port: string }
+  | { mode: "redirect"; targetUrl: string };
 
 interface Feedback {
   message: string;
@@ -72,14 +87,17 @@ export default function Dashboard() {
   const [formData, setFormData] = useState({
     subdomain: "",
     domain: "",
+    mode: "proxy" as "proxy" | "redirect",
     hostname: "",
     port: "",
+    targetUrl: "",
   });
   const [addError, setAddError] = useState("");
   const [pageError, setPageError] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   const setTransientFeedback = useCallback(
     (message: string, severity: Feedback["severity"] = "success") => {
@@ -169,12 +187,14 @@ export default function Dashboard() {
       setAddError("");
       setFeedback(null);
 
+      const isRedirect = formData.mode === "redirect";
       const trimmedSubdomain = formData.subdomain.trim();
       const trimmedHostname = formData.hostname.trim();
+      const trimmedTargetUrl = formData.targetUrl.trim();
       const parsedPort = Number(formData.port);
 
-      if (!trimmedSubdomain || !trimmedHostname) {
-        setAddError("Enter a subdomain and destination host to continue.");
+      if (!trimmedSubdomain) {
+        setAddError("Enter a subdomain to continue.");
         return;
       }
 
@@ -183,36 +203,73 @@ export default function Dashboard() {
         return;
       }
 
-      if (
-        Number.isNaN(parsedPort) ||
-        parsedPort < 1 ||
-        parsedPort > 65535
-      ) {
-        setAddError("Use a port between 1 and 65535.");
-        return;
-      }
-
       if (!formData.domain) {
         setAddError("There are no available domain suffixes right now.");
         return;
       }
 
+      if (isRedirect) {
+        if (!trimmedTargetUrl) {
+          setAddError("Enter the redirect URL to continue.");
+          return;
+        }
+
+        try {
+          const redirectTarget = new URL(trimmedTargetUrl);
+          if (!["http:", "https:"].includes(redirectTarget.protocol)) {
+            setAddError("Redirect URLs must start with http:// or https://.");
+            return;
+          }
+        } catch {
+          setAddError(
+            "Enter a full URL, for example https://example.com/page.",
+          );
+          return;
+        }
+      } else {
+        if (!trimmedHostname) {
+          setAddError("Enter a destination host to continue.");
+          return;
+        }
+
+        if (
+          Number.isNaN(parsedPort) ||
+          parsedPort < 1 ||
+          parsedPort > 65535
+        ) {
+          setAddError("Use a port between 1 and 65535.");
+          return;
+        }
+      }
+
       setIsSubmitting(true);
 
       try {
-        await api.post("/domains", {
-          ...formData,
-          subdomain: trimmedSubdomain,
-          hostname: trimmedHostname,
-          port: parsedPort.toString(),
-        });
+        await api.post(
+          "/domains",
+          isRedirect
+            ? {
+                subdomain: trimmedSubdomain,
+                domain: formData.domain,
+                mode: "redirect",
+                targetUrl: trimmedTargetUrl,
+              }
+            : {
+                subdomain: trimmedSubdomain,
+                domain: formData.domain,
+                mode: "proxy",
+                hostname: trimmedHostname,
+                port: parsedPort.toString(),
+              },
+        );
         setShowAddForm(false);
-        setFormData({
+        setFormData((prev) => ({
+          ...prev,
           subdomain: "",
-          domain: availableDomains[0] || "",
           hostname: "",
           port: "",
-        });
+          targetUrl: "",
+        }));
         setTransientFeedback("Domain registered successfully.");
         await fetchData();
       } catch (error: unknown) {
@@ -223,7 +280,7 @@ export default function Dashboard() {
         setIsSubmitting(false);
       }
     },
-    [availableDomains, fetchData, formData, setTransientFeedback],
+    [fetchData, formData, setTransientFeedback],
   );
 
   const handleDelete = useCallback(
@@ -243,6 +300,31 @@ export default function Dashboard() {
         });
       } finally {
         setDeletingId(null);
+      }
+    },
+    [setTransientFeedback],
+  );
+
+  const handleUpdate = useCallback(
+    async (id: number, payload: DomainUpdatePayload): Promise<boolean> => {
+      setFeedback(null);
+      setUpdatingId(id);
+      try {
+        const res = await api.put<{ domain: Domain }>(`/domains/${id}`, payload);
+        const updated = res.data.domain;
+        setDomains((current) =>
+          current.map((item) => (item.id === id ? updated : item)),
+        );
+        setTransientFeedback("Route updated successfully.");
+        return true;
+      } catch (error: unknown) {
+        setFeedback({
+          message: getErrorMessage(error, "We could not update that route."),
+          severity: "error",
+        });
+        return false;
+      } finally {
+        setUpdatingId(null);
       }
     },
     [setTransientFeedback],
@@ -334,8 +416,9 @@ export default function Dashboard() {
               color="textSecondary"
               sx={{ mt: 0.75, mb: 2.5, maxWidth: 640 }}
             >
-              Use the same format every time: choose a name, confirm the
-              suffix, and point it at the host that should receive traffic.
+              Pick a route type first: proxied routes forward traffic to a
+              destination host and port, while redirects send visitors straight
+              to a URL.
             </Typography>
 
             {addError ? (
@@ -349,16 +432,7 @@ export default function Dashboard() {
               onSubmit={handleAddSubmit}
               sx={{ display: "grid", gap: 2.5 }}
             >
-              <Box
-                sx={{
-                  display: "grid",
-                  gap: 2.5,
-                  gridTemplateColumns: {
-                    xs: "1fr",
-                    md: "1.3fr 1.3fr 0.7fr",
-                  },
-                }}
-              >
+              <Box sx={{ display: "grid", gap: 2.5 }}>
                 <TextField
                   label="Subdomain"
                   required
@@ -416,51 +490,14 @@ export default function Dashboard() {
                     },
                   }}
                 />
-
-                <TextField
-                  label="Destination host"
-                  required
-                  fullWidth
-                  placeholder="192.168.1.5 or app.example.net"
-                  value={formData.hostname}
-                  onChange={(event) =>
-                    setFormData({
-                      ...formData,
-                      hostname: event.target.value,
-                    })
-                  }
-                  helperText="IP address, hostname, or tunnel endpoint."
-                  slotProps={{
-                    htmlInput: {
-                      maxLength: 255,
-                      autoCapitalize: "none",
-                      autoCorrect: "off",
-                      spellCheck: false,
-                      dir: "auto",
-                    },
-                  }}
-                />
-
-                <TextField
-                  label="Destination port"
-                  required
-                  fullWidth
-                  type="number"
-                  placeholder="8080"
-                  value={formData.port}
-                  onChange={(event) =>
-                    setFormData({ ...formData, port: event.target.value })
-                  }
-                  helperText="The service port that receives requests."
-                  slotProps={{
-                    htmlInput: {
-                      min: 1,
-                      max: 65535,
-                      inputMode: "numeric",
-                    },
-                  }}
-                />
               </Box>
+
+              <TargetFields
+                value={formData}
+                onChange={(next) =>
+                  setFormData((prev) => ({ ...prev, ...next }))
+                }
+              />
 
               <Box
                 sx={{
@@ -558,6 +595,8 @@ export default function Dashboard() {
               key={domain.id}
               domain={domain}
               onDelete={handleDelete}
+              onUpdate={handleUpdate}
+              isUpdating={updatingId === domain.id}
               isDeleting={deletingId === domain.id}
             />
           ))}
@@ -586,10 +625,17 @@ export default function Dashboard() {
 const DomainRow = memo(function DomainRow({
   domain,
   onDelete,
+  onUpdate,
+  isUpdating,
   isDeleting,
 }: {
   domain: Domain;
   onDelete: (id: number) => void;
+  onUpdate: (
+    id: number,
+    payload: DomainUpdatePayload,
+  ) => Promise<boolean>;
+  isUpdating: boolean;
   isDeleting: boolean;
 }) {
   const theme = useTheme();
@@ -598,6 +644,14 @@ const DomainRow = memo(function DomainRow({
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [statsError, setStatsError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editData, setEditData] = useState<TargetFormValue>({
+    mode: domain.mode ?? "proxy",
+    hostname: domain.hostname ?? "",
+    port: domain.port != null ? String(domain.port) : "",
+    targetUrl: domain.targetUrl ?? "",
+  });
+  const [editError, setEditError] = useState("");
 
   const currentYear = new Date().getFullYear();
   const years = useMemo(
@@ -643,6 +697,80 @@ const DomainRow = memo(function DomainRow({
     }
   };
 
+  const openEditor = useCallback(() => {
+    setEditData({
+      mode: domain.mode ?? "proxy",
+      hostname: domain.hostname ?? "",
+      port: domain.port != null ? String(domain.port) : "",
+      targetUrl: domain.targetUrl ?? "",
+    });
+    setEditError("");
+    setShowEdit(true);
+  }, [domain]);
+
+  const handleEditSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      setEditError("");
+
+      const trimmedHostname = editData.hostname.trim();
+      const trimmedTargetUrl = editData.targetUrl.trim();
+      const parsedPort = Number(editData.port);
+
+      if (editData.mode === "redirect") {
+        if (!trimmedTargetUrl) {
+          setEditError("Enter the redirect URL to continue.");
+          return;
+        }
+
+        try {
+          const redirectTarget = new URL(trimmedTargetUrl);
+          if (!["http:", "https:"].includes(redirectTarget.protocol)) {
+            setEditError(
+              "Redirect URLs must start with http:// or https://.",
+            );
+            return;
+          }
+        } catch {
+          setEditError(
+            "Enter a full URL, for example https://example.com/page.",
+          );
+          return;
+        }
+      } else {
+        if (!trimmedHostname) {
+          setEditError("Enter a destination host to continue.");
+          return;
+        }
+
+        if (
+          Number.isNaN(parsedPort) ||
+          parsedPort < 1 ||
+          parsedPort > 65535
+        ) {
+          setEditError("Use a port between 1 and 65535.");
+          return;
+        }
+      }
+
+      const success = await onUpdate(
+        domain.id,
+        editData.mode === "redirect"
+          ? { mode: "redirect", targetUrl: trimmedTargetUrl }
+          : {
+              mode: "proxy",
+              hostname: trimmedHostname,
+              port: String(parsedPort),
+            },
+      );
+
+      if (success) {
+        setShowEdit(false);
+      }
+    },
+    [domain.id, editData, onUpdate],
+  );
+
   return (
     <Card>
       <Box
@@ -672,7 +800,7 @@ const DomainRow = memo(function DomainRow({
               color="textSecondary"
               sx={{ display: "block", lineHeight: 1.4 }}
             >
-              Active route
+              {domain.mode === "redirect" ? "Redirect route" : "Proxied route"}
             </Typography>
             <Typography
               dir="auto"
@@ -694,7 +822,9 @@ const DomainRow = memo(function DomainRow({
                 overflowWrap: "anywhere",
               }}
             >
-              → {domain.hostname}:{domain.port}
+              {domain.mode === "redirect"
+                ? `→ ${domain.targetUrl || "no redirect URL set"}`
+                : `→ ${domain.hostname || "no host set"}:${domain.port ?? "?"}`}
             </Typography>
           </Box>
         </Box>
@@ -705,6 +835,15 @@ const DomainRow = memo(function DomainRow({
           useFlexGap
           sx={{ flexShrink: 0, flexWrap: "wrap" }}
         >
+          <Button
+            size="small"
+            variant={showEdit ? "contained" : "outlined"}
+            startIcon={<ModeEditOutlineRounded />}
+            onClick={() => (showEdit ? setShowEdit(false) : openEditor())}
+            disabled={isDeleting || isUpdating}
+          >
+            {showEdit ? "Close editor" : "Edit"}
+          </Button>
           <Button
             size="small"
             variant={showStats ? "contained" : "outlined"}
@@ -734,6 +873,66 @@ const DomainRow = memo(function DomainRow({
           </Button>
         </Stack>
       </Box>
+
+      {showEdit ? (
+        <>
+          <Divider />
+          <CardContent>
+            <Typography variant="overline" color="textSecondary">
+              Edit route
+            </Typography>
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ maxWidth: 520, mt: 0.75, mb: 2.5 }}
+            >
+              Change the route type or destination. The subdomain name stays
+              the same, and changes go live immediately.
+            </Typography>
+
+            {editError ? (
+              <Alert severity="error" sx={{ mb: 2.5 }} role="alert">
+                {editError}
+              </Alert>
+            ) : null}
+
+            <Box
+              component="form"
+              onSubmit={handleEditSubmit}
+              sx={{ display: "grid", gap: 2.5 }}
+            >
+              <TargetFields value={editData} onChange={setEditData} />
+              <Stack
+                direction="row"
+                spacing={1}
+                useFlexGap
+                sx={{ justifyContent: "flex-end" }}
+              >
+                <Button
+                  type="button"
+                  color="inherit"
+                  onClick={() => setShowEdit(false)}
+                  disabled={isUpdating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={isUpdating}
+                  startIcon={
+                    isUpdating ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : undefined
+                  }
+                >
+                  Save changes
+                </Button>
+              </Stack>
+            </Box>
+          </CardContent>
+        </>
+      ) : null}
 
       {showStats ? (
         <>
@@ -900,6 +1099,113 @@ const DomainRow = memo(function DomainRow({
     </Card>
   );
 });
+
+// Shared route-type selector plus the destination fields for both modes:
+// "Proxied" asks for a host and port, "Redirect" only for a target URL.
+function TargetFields({
+  value,
+  onChange,
+}: {
+  value: TargetFormValue;
+  onChange: (next: TargetFormValue) => void;
+}) {
+  const routeTypeLabelId = useId();
+  const isRedirect = value.mode === "redirect";
+
+  return (
+    <Box sx={{ display: "grid", gap: 2.5 }}>
+      <FormControl fullWidth>
+        <InputLabel id={routeTypeLabelId}>Route type</InputLabel>
+        <Select
+          labelId={routeTypeLabelId}
+          value={value.mode}
+          label="Route type"
+          onChange={(event) =>
+            onChange({
+              ...value,
+              mode:
+                event.target.value === "redirect" ? "redirect" : "proxy",
+            })
+          }
+        >
+          <MenuItem value="proxy">Proxied</MenuItem>
+          <MenuItem value="redirect">Redirect</MenuItem>
+        </Select>
+      </FormControl>
+
+      {isRedirect ? (
+        <TextField
+          label="Redirect URL"
+          required
+          fullWidth
+          placeholder="https://example.com/page"
+          value={value.targetUrl}
+          onChange={(event) =>
+            onChange({ ...value, targetUrl: event.target.value })
+          }
+          helperText="Visitors are sent straight to this URL."
+          slotProps={{
+            htmlInput: {
+              maxLength: 500,
+              autoCapitalize: "none",
+              autoCorrect: "off",
+              spellCheck: false,
+              dir: "auto",
+              inputMode: "url",
+            },
+          }}
+        />
+      ) : (
+        <Box
+          sx={{
+            display: "grid",
+            gap: 2.5,
+            gridTemplateColumns: { xs: "1fr", md: "1.6fr 1fr" },
+          }}
+        >
+          <TextField
+            label="Destination host"
+            required
+            fullWidth
+            placeholder="192.168.1.5 or app.example.net"
+            value={value.hostname}
+            onChange={(event) =>
+              onChange({ ...value, hostname: event.target.value })
+            }
+            helperText="IP address, hostname, or tunnel endpoint."
+            slotProps={{
+              htmlInput: {
+                maxLength: 255,
+                autoCapitalize: "none",
+                autoCorrect: "off",
+                spellCheck: false,
+                dir: "auto",
+              },
+            }}
+          />
+
+          <TextField
+            label="Destination port"
+            required
+            fullWidth
+            type="number"
+            placeholder="8080"
+            value={value.port}
+            onChange={(event) => onChange({ ...value, port: event.target.value })}
+            helperText="The service port that receives requests."
+            slotProps={{
+              htmlInput: {
+                min: 1,
+                max: 65535,
+                inputMode: "numeric",
+              },
+            }}
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
 
 function MetricCard({
   label,

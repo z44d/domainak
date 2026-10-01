@@ -7,6 +7,7 @@ INSTALL_DIR="${HOME}/.domainak"
 ENV_FILE="${INSTALL_DIR}/.env"
 COMPOSE_FILE="${INSTALL_DIR}/docker-compose.yaml"
 NGINX_FILE="${INSTALL_DIR}/nginx.conf"
+LUA_FILE="${INSTALL_DIR}/unregistered.lua"
 REPO_OWNER="${DOMAINAK_REPO_OWNER:-z44d}"
 REPO_NAME="${DOMAINAK_REPO_NAME:-domainak}"
 REPO_REF="${DOMAINAK_REPO_REF:-main}"
@@ -238,6 +239,7 @@ download_stack_files() {
   print_step "Downloading deployment files"
   download_file "${RAW_BASE_URL}/docker-compose.yaml" "$COMPOSE_FILE"
   download_file "${RAW_BASE_URL}/nginx.conf" "$NGINX_FILE"
+  download_file "${RAW_BASE_URL}/unregistered.lua" "$LUA_FILE"
   print_success "Deployment files downloaded into ${INSTALL_DIR}"
 }
 
