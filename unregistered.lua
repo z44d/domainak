@@ -536,3 +536,15 @@ function domainak_render(template, values)
         return values[key] or ""
     end))
 end
+
+-- Escapes a value for safe interpolation into the HTML page template.
+-- OpenResty has no built-in HTML escaper (ngx.escape_html does not exist).
+function domainak_escape_html(value)
+    return (string.gsub(tostring(value), "[\"'&<>]", function(char)
+        if char == "&" then return "&amp;" end
+        if char == "<" then return "&lt;" end
+        if char == ">" then return "&gt;" end
+        if char == "\"" then return "&quot;" end
+        return "&#39;"
+    end))
+end
