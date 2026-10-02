@@ -206,12 +206,23 @@ domainsRouter.post("/", async (c) => {
     }
   }
 
+  // One hostname maps to exactly one route, so it can be registered only
+  // once — as a proxy or as a redirect, never twice. The table is queried
+  // directly because a missing redis key (fresh redis, older rows) must not
+  // let an already used name through.
+  const existingRoute = await db
+    .select({ id: domainTable.id })
+    .from(domainTable)
+    .where(eq(domainTable.subdomain, fullSubdomain));
+  if (existingRoute.length > 0) {
+    return c.json({ error: "Subdomain is already in use" }, 409);
+  }
+
   if (await redis.exists(fullSubdomain)) {
-    return c.json({ error: "Subdomain already taken" }, 400);
+    return c.json({ error: "Subdomain is already in use" }, 409);
   }
 
   try {
-    await redis.set(fullSubdomain, parsed.target.redisValue);
     const inserted = await db
       .insert(domainTable)
       .values({
@@ -224,8 +235,30 @@ domainsRouter.post("/", async (c) => {
       })
       .returning();
 
-    return c.json({ domain: inserted[0] });
+    const route = inserted[0];
+    if (!route) {
+      return c.json({ error: "Failed to register subdomain" }, 500);
+    }
+
+    try {
+      await redis.set(fullSubdomain, parsed.target.redisValue);
+    } catch (redisError) {
+      // The row is written first and published to redis afterwards, so a
+      // failed publish is rolled back instead of leaving a hostname that
+      // has no route entry behind it.
+      console.error("Failed to publish route to redis:", redisError);
+      await db.delete(domainTable).where(eq(domainTable.id, route.id));
+      return c.json({ error: "Failed to register subdomain" }, 500);
+    }
+
+    return c.json({ domain: route });
   } catch (error: any) {
+    // 23505 is the unique violation on `domain.subdomain`, raised when a
+    // concurrent request claims the same hostname first.
+    if (error?.code === "23505") {
+      return c.json({ error: "Subdomain is already in use" }, 409);
+    }
+
     console.error(error);
     return c.json({ error: "Failed to register subdomain" }, 500);
   }

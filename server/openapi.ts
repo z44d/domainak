@@ -211,12 +211,13 @@ export const openApiDoc: OpenAPIV3.Document = {
         },
         responses: {
           "200": { description: "Domain registered successfully" },
-          "400": {
-            description:
-              "Missing fields, invalid domain, or subdomain taken",
-          },
+          "400": { description: "Missing fields or invalid domain" },
           "401": { description: "Unauthorized" },
-          "403": { description: "IP is banned" },
+          "403": { description: "IP or domain is banned" },
+          "409": {
+            description:
+              "Subdomain is already in use: a hostname maps to exactly one route",
+          },
         },
       },
     },

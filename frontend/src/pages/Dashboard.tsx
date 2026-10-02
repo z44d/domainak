@@ -218,6 +218,20 @@ export default function Dashboard() {
         return;
       }
 
+      // A subdomain is registered once, for a single route type (proxy or
+      // redirect). Catch the repeat locally so the message shows up
+      // instantly, before the request.
+      const fullHost = `${trimmedSubdomain}.${formData.domain}`.toLowerCase();
+      const isUsed = domains.some(
+        (item) => item.subdomain.toLowerCase() === fullHost,
+      );
+      if (isUsed) {
+        setAddError(
+          `Subdomain is already in use: ${fullHost} is registered in your workspace. Pick another name or remove that route first.`,
+        );
+        return;
+      }
+
       if (isRedirect) {
         if (!trimmedTargetUrl) {
           setAddError("Enter the redirect URL to continue.");
@@ -290,7 +304,7 @@ export default function Dashboard() {
         setIsSubmitting(false);
       }
     },
-    [fetchData, formData, setTransientFeedback],
+    [domains, fetchData, formData, setTransientFeedback],
   );
 
   const handleDelete = useCallback(
@@ -461,7 +475,7 @@ export default function Dashboard() {
                         .replace(/[^a-z0-9-]/g, ""),
                     })
                   }
-                  helperText="Keep it short and easy to recognize."
+                  helperText="Keep it short and easy to recognize. A name is registered once, as a proxy or a redirect."
                   slotProps={{
                     htmlInput: {
                       minLength: 2,
