@@ -156,6 +156,7 @@ Frontend `eslint.config.js` additionally enforces:
 - `docker-compose.yaml` builds local backend/frontend images and tags them with the GHCR image names.
 - `setup.sh` writes deployment env vars into `~/.domainak/.env`.
 - `setup.sh` downloads `docker-compose.yaml` and `nginx.conf` into `~/.domainak`.
+- On an update run (existing `~/.domainak/.env`), `setup.sh` stops the compose project in `~/.domainak`, force-removes the local `domainak-static` and `domainak-server` images (registry/owner resolved from `GHCR_REGISTRY`/`GHCR_OWNER`, shell env first, then `.env`), pulls them again, and restarts the stack.
 
 ## Cursor and Copilot Rules
 No repo-specific rule files were found:

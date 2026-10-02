@@ -132,6 +132,8 @@ load_existing_env() {
       GITHUB_CLIENT_SECRET) GITHUB_CLIENT_SECRET_DEFAULT="$value" ;;
       ADMIN_IDS) ADMIN_IDS_DEFAULT="$value" ;;
       JWT_SECRET) JWT_SECRET_DEFAULT="$value" ;;
+      GHCR_REGISTRY) GHCR_REGISTRY_DEFAULT="$value" ;;
+      GHCR_OWNER) GHCR_OWNER_DEFAULT="$value" ;;
     esac
   done < "$ENV_FILE"
 }
@@ -243,6 +245,53 @@ download_stack_files() {
   print_success "Deployment files downloaded into ${INSTALL_DIR}"
 }
 
+# Update path. The whole compose project in ${INSTALL_DIR} is taken down
+# first, because a stopped container still references its image and docker
+# refuses to delete it. The application images are then deleted locally so
+# the following pull cannot reuse a cached layer, and finally compose pulls
+# them again.
+update_stack() {
+  local registry owner image image_ids
+
+  print_step "Stopping containers in ${INSTALL_DIR}"
+  (
+    cd "$INSTALL_DIR"
+    "${COMPOSE_CMD[@]}" down --remove-orphans
+  )
+  print_success "Containers stopped"
+
+  registry="${GHCR_REGISTRY:-${GHCR_REGISTRY_DEFAULT:-ghcr.io}}"
+  owner="${GHCR_OWNER:-${GHCR_OWNER_DEFAULT:-z44d}}"
+
+  for image in \
+    "${registry}/${owner}/domainak-static" \
+    "${registry}/${owner}/domainak-server"; do
+    # -q lists every local tag of the repository; an empty result just
+    # means this host never pulled it.
+    image_ids="$(docker images -q "$image" | sort -u || true)"
+
+    if [[ -z "$image_ids" ]]; then
+      print_step "No local copy of ${image} to remove"
+      continue
+    fi
+
+    print_step "Removing local image ${image}"
+    # shellcheck disable=SC2086 # image_ids is a list of image IDs
+    if docker rmi -f $image_ids >/dev/null 2>&1; then
+      print_success "Removed ${image}"
+    else
+      print_warn "Could not remove ${image}; continuing with the update"
+    fi
+  done
+
+  print_step "Pulling fresh application images"
+  (
+    cd "$INSTALL_DIR"
+    "${COMPOSE_CMD[@]}" pull domainak domainak-server
+  )
+  print_success "Application images pulled"
+}
+
 start_stack() {
   print_step "Starting ${APP_NAME} with Docker Compose"
   (
@@ -258,7 +307,7 @@ main() {
   if [[ -f "$ENV_FILE" ]]; then
     mode="update"
     mode_label="Update"
-    subtitle="Existing installation found in ${INSTALL_DIR}. We will refresh files and let you review your settings."
+    subtitle="Existing installation found in ${INSTALL_DIR}. We will refresh files, stop the running stack, pull fresh images, and let you review your settings."
   else
     mode="install"
     mode_label="Install"
@@ -288,6 +337,11 @@ main() {
   print_success "Environment file saved to ${ENV_FILE}"
 
   download_stack_files
+
+  if [[ "$mode" == "update" ]]; then
+    update_stack
+  fi
+
   start_stack
 
   printf '\n'
