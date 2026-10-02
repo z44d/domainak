@@ -19,7 +19,7 @@ Practical guide for agentic coding assistants working in `domainak`.
 - `.github/workflows/` - deployment workflows
 - `docker-compose.yaml` - container stack
 - `nginx.conf` - OpenResty routing config
-- `unregistered.lua` - Lua init file for OpenResty (unregistered-host page template); mounted/downloaded alongside `nginx.conf` because inline `_by_lua_block` code is limited by nginx's 8 KB config buffer
+- `unregistered.lua` - Lua init file for OpenResty (unregistered-host and banned-host page templates, red accent for banned); mounted/downloaded alongside `nginx.conf` because inline `_by_lua_block` code is limited by nginx's 8 KB config buffer
 - `setup.sh` - guided install/update script
 
 ## Package Tools
@@ -63,6 +63,7 @@ Notes:
 - There is no canonical `bun test`, `vitest`, or `jest` command.
 - There is no single-test command yet.
 - Verification currently means linting, building, and manual API/UI checks.
+- Never run automated browser tests in this project: no Playwright, no browser automation tools, no automated screenshots of the UI. Verify UI work with lint/build plus manual inspection by the user.
 
 ## Single-Test Guidance
 Single-test execution is not supported today because the repo has no configured test framework.
