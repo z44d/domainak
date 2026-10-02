@@ -22,6 +22,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { getGithubAuthUrl } from "../lib/api";
 import { savePendingClaimHost } from "../lib/claim";
+import Suspended from "./Suspended";
 import { FONT_DISPLAY, FONT_MONO } from "../theme/theme";
 
 const features = [
@@ -61,8 +62,15 @@ export default function Landing() {
   const isDark = theme.palette.mode === "dark";
   // Set when arriving from the proxy's "subdomain not registered" page.
   const claimHost = searchParams.get("subdomain")?.trim() ?? "";
+  // Set when GitHub sign-in bounced a suspended account back here.
+  const authError = searchParams.get("error")?.trim() ?? "";
+  const isSuspendedError = authError === "banned";
 
   useEffect(() => {
+    if (isSuspendedError) {
+      return;
+    }
+
     if (claimHost) {
       savePendingClaimHost(claimHost);
     }
@@ -71,11 +79,15 @@ export default function Landing() {
     if (token) {
       navigate("/dashboard", { replace: true });
     }
-  }, [claimHost, navigate]);
+  }, [claimHost, isSuspendedError, navigate]);
 
   const handleLogin = () => {
     window.location.href = getGithubAuthUrl();
   };
+
+  if (isSuspendedError) {
+    return <Suspended user={null} />;
+  }
 
   return (
     <AppShell user={null}>

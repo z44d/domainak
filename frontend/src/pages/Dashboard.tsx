@@ -50,6 +50,7 @@ import { subdomainFromHost, takePendingClaimHost } from "../lib/claim";
 import type { Domain, Stats, User } from "../lib/types";
 import { formatNumber, getErrorMessage } from "../lib/utils";
 import { FONT_DISPLAY, FONT_MONO } from "../theme/theme";
+import Suspended from "./Suspended";
 
 type DomainsResponse = { domains: Domain[] };
 type AvailableDomainsResponse = { available: string[] };
@@ -82,6 +83,7 @@ export default function Dashboard() {
   const [domains, setDomains] = useState<Domain[]>([]);
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSuspended, setIsSuspended] = useState(false);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -110,10 +112,18 @@ export default function Dashboard() {
     async (signal?: AbortSignal) => {
       try {
         setPageError("");
+        setIsSuspended(false);
         const { data: userData } = await api.get<User>("/auth/me", {
           signal,
         });
         setUser(userData);
+
+        // Suspended accounts only get the suspension page: no routes, no
+        // claim form, no analytics behind it.
+        if (userData.isBanned) {
+          setIsSuspended(true);
+          return;
+        }
 
         const [domainsRes, availableRes] = await Promise.all([
           api.get<DomainsResponse>("/domains", { signal }),
@@ -329,6 +339,10 @@ export default function Dashboard() {
     },
     [setTransientFeedback],
   );
+
+  if (isSuspended) {
+    return <Suspended user={user} />;
+  }
 
   if (isLoading) {
     return <LoadingScreen label="Loading your domains..." />;

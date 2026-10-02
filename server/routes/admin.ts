@@ -52,8 +52,13 @@ function buildPagination(
   };
 }
 
-async function setBannedDomainCache(domain: string) {
-  await redis.set(`banned:${domain}`, "1");
+// The banned page reads this value back from the proxy: it holds the ban
+// reason, or "1" when no reason was given.
+async function setBannedDomainCache(
+  domain: string,
+  reason: string | null,
+) {
+  await redis.set(`banned:${domain}`, reason || "1");
 }
 
 async function clearBannedDomainCache(domain: string) {
@@ -243,7 +248,7 @@ adminRouter.post("/banned-domains", async (c) => {
 
     await Promise.all([
       deleteDomainRoute(domain),
-      setBannedDomainCache(domain),
+      setBannedDomainCache(domain, reason),
     ]);
     return c.json({ success: true });
   } catch (error: any) {

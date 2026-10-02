@@ -194,13 +194,23 @@ export default function Admin() {
 
   const ensureAdmin = useCallback(
     async (signal?: AbortSignal) => {
+      // Suspended accounts never reach moderation tools; the landing page
+      // renders the suspension notice for this error.
       if (user) {
+        if (user.isBanned) {
+          navigate("/?error=banned", { replace: true });
+          return null;
+        }
         return user;
       }
 
       const { data: userData } = await api.get<User>("/auth/me", {
         signal,
       });
+      if (userData.isBanned) {
+        navigate("/?error=banned", { replace: true });
+        return null;
+      }
       if (!userData.isAdmin) {
         navigate("/dashboard", { replace: true });
         return null;
