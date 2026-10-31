@@ -58,52 +58,81 @@ export interface Domain {
   serviceWindow?: ServiceWindow | null;
   createdAt?: string;
   user?: User | null;
+  // Number of DNS records stored for this domain (from GET /domains).
+  recordCount?: number;
 }
 
-// DNS records (A, AAAA, CNAME, TXT) served from the delegated zone that
-// domainak runs itself, so they are not limited by Cloudflare record quotas.
-export type DnsRecordType = "A" | "AAAA" | "CNAME" | "TXT";
+// DNS records for one registered domain. Records live under the domain
+// itself (@ is the domain, "www" is www.<domain>) and are published in
+// the domain's own zone in the project's PowerDNS server. syncStatus
+// reports whether the published copy matches the row: "synced",
+// "pending" (never published, for example PowerDNS not configured)
+// or "failed" (the last publish attempt errored; see syncError and
+// retry). Records only resolve publicly once the domain is delegated
+// to the nameservers in DomainRecordsResponse.delegation.
+export type DnsRecordType =
+  | "A"
+  | "AAAA"
+  | "CNAME"
+  | "TXT"
+  | "MX"
+  | "NS"
+  | "SRV"
+  | "CAA"
+  | "PTR"
+  | "DS"
+  | "HTTPS"
+  | "SVCB"
+  | "CERT"
+  | "SSHFP"
+  | "TLSA"
+  | "NAPTR";
 
-// "dns-only" answers with the real value straight from PowerDNS;
-// "proxied" hides the origin behind Cloudflare, like the orange cloud.
-export type DnsRecordMode = "dns-only" | "proxied";
+export type DnsSyncStatus = "synced" | "pending" | "failed";
 
-// A base domain where records can be created. `zone` is what the record
-// names resolve inside, e.g. tgram.rc.domainak.qzz.io lives in
-// rc.domainak.qzz.io.
-export interface RecordDomain {
-  domain: string;
-  zone: string;
-}
-
-export interface DnsRecord {
+export interface DomainDnsRecord {
   id: number;
+  domainId: number;
   userId: number;
   // Fully qualified name without a trailing dot, e.g.
-  // "tgram.rc.domainak.qzz.io".
+  // "www.app.example.com".
+  name: string;
+  type: DnsRecordType;
+  // Canonical record data, e.g. "10 mail.example.com" for MX.
+  value: string;
+  ttl: number;
+  comment?: string | null;
+  syncStatus: DnsSyncStatus;
+  syncError?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type DnsDelegationStatus = "delegated" | "pending" | "unknown";
+
+export interface DnsDelegationInfo {
+  status: DnsDelegationStatus;
+  checkedAt: string;
+}
+
+// Payload of GET /domains/:id/records.
+export interface DomainRecordsResponse {
+  domain: string;
+  dnsConfigured: boolean;
+  nameservers: string[];
+  delegation: DnsDelegationInfo;
+  records: DomainDnsRecord[];
+}
+
+// Body of POST /domains/:id/records and PUT
+// /domains/:id/records/:recordId. `name` may be "@", relative
+// ("www", "_acme-challenge") or a full name inside the domain.
+export interface DomainDnsRecordPayload {
   name: string;
   type: DnsRecordType;
   value: string;
   ttl: number;
-  // PowerDNS zone that answers this record, e.g. "rc.domainak.qzz.io".
-  zone: string;
-  recordMode: DnsRecordMode;
-  createdAt?: string;
-  // Admin-only: the owner of the record, populated on admin list endpoints.
-  user?: {
-    id: number;
-    name: string;
-    email: string;
-    githubId: number;
-    isBanned: boolean;
-  } | null;
-}
-
-// Payload of GET /records: the user's records plus the base domains that
-// support record mode.
-export interface RecordsResponse {
-  records: DnsRecord[];
-  domains: RecordDomain[];
+  comment?: string | null;
 }
 
 export interface AdminUserRow {
@@ -113,6 +142,26 @@ export interface AdminUserRow {
   githubId: number;
   isBanned: boolean;
   domainCount: number;
+}
+
+// One row of the admin DNS records inventory (GET /admin/dns-records):
+// the record itself, the domain it belongs to, and its owner.
+export interface AdminDnsRecordRow {
+  id: number;
+  name: string;
+  type: DnsRecordType;
+  value: string;
+  ttl: number;
+  syncStatus: DnsSyncStatus;
+  domain: string | null;
+  createdAt?: string;
+  user: {
+    id: number | null;
+    name: string | null;
+    email: string | null;
+    githubId: number | null;
+    isBanned: boolean | null;
+  } | null;
 }
 
 export interface BannedDomain {

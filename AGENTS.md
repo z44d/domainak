@@ -12,15 +12,17 @@ Practical guide for agentic coding assistants working in `domainak`.
 ## Key Paths
 - `server/` - API entrypoint, routes, middleware, config
 - `server/db/` - Drizzle schema, Postgres bootstrap, Redis client
-- `server/routes/` - feature routers: `auth`, `admin`, `domains`, `stats`
+- `server/routes/` - feature routers: `auth`, `admin`, `domains`, `stats`; per-domain DNS record handlers live in `server/routes/domain-records.ts`, validation in `server/dns-validation.ts`, proxy routes for A/AAAA/CNAME records in `server/record-routes.ts`
 - `frontend/src/pages/` - page-level screens
 - `frontend/src/components/` - reusable UI
 - `frontend/src/lib/` - API client, helpers, shared types
 - `.github/workflows/` - deployment workflows
 - `docker-compose.yaml` - container stack
-- `nginx.conf` - OpenResty routing config
-- `pdns.conf` - PowerDNS drop-in config for the delegated records zone (A/AAAA/CNAME/TXT served by domainak itself, unlimited by Cloudflare quotas)
-- `server/cloudflare.ts` - Cloudflare API client: `rc.<base>` NS delegations and proxied DNS records (needs `CLOUDFLARE_API_TOKEN`)
+- `nginx.conf` - OpenResty routing config: registered routes first, then DNS record routes (`record:<host>` in Redis), then the unregistered-host page
+- `server/powerdns.ts` - PowerDNS API client: per-domain zones, rrset
+  rebuilds, wire encoding, delegation checks (needs `PDNS_API_URL` /
+  `PDNS_API_KEY`, nameservers from `DNS_NAMESERVERS`)
+- `pdns.conf` - PowerDNS settings mounted into the `pdns` service
 - `unregistered.lua` - Lua init file for OpenResty (unregistered-host and banned-host page templates, red accent for banned); mounted/downloaded alongside `nginx.conf` because inline `_by_lua_block` code is limited by nginx's 8 KB config buffer
 - `setup.sh` - guided install/update script
 
@@ -60,20 +62,14 @@ Notes:
 - root `lint` runs `biome check server --write --unsafe`, so it mutates files
 
 ## Tests
-- There is no automated test script in either `package.json`.
-- No repo-local unit/integration test runner is configured right now.
-- There is no canonical `bun test`, `vitest`, or `jest` command.
-- There is no single-test command yet.
-- Verification currently means linting, building, and manual API/UI checks.
+- Full suite: `bun test` (Bun's built-in runner, no extra framework).
+- Single file: `bun test server/dns-validation.test.ts`.
+- Single test by name: `bun test -t "MX"`.
+- No database, Redis or real DNS server is needed: the tests cover
+  pure DNS validation and the PowerDNS client with a stubbed `fetch`
+  plus an in-process mock PowerDNS HTTP server.
+- Verification also means linting, building, and manual API/UI checks.
 - Never run automated browser tests in this project: no Playwright, no browser automation tools, no automated screenshots of the UI. Verify UI work with lint/build plus manual inspection by the user.
-
-## Single-Test Guidance
-Single-test execution is not supported today because the repo has no configured test framework.
-If you add one, document all of these in this file:
-- full-suite command
-- single-file command
-- single-test-by-name command
-- env/setup requirements
 
 ## Database and Docker Commands
 ```bash
@@ -86,8 +82,8 @@ docker compose down
 docker compose ps
 docker compose logs backend --tail=200
 docker compose logs openresty --tail=200
-docker compose logs pdns --tail=200
 docker compose logs cloudflared --tail=200
+docker compose logs pdns --tail=200
 ```
 
 ## Formatting Rules
@@ -154,7 +150,7 @@ Frontend `eslint.config.js` additionally enforces:
 - Middleware returns JSON errors instead of throwing framework exceptions.## Config and Deployment
 
 - Backend env handling is centralized in `server/config.ts`.
-- DNS records live in a PowerDNS zone per base domain (`rc.<domain>`, from `DOMAINS` minus `RECORD_DOMAIN_EXCLUDES`, default `z44d.com`); `CLOUDFLARE_API_TOKEN` publishes the NS delegations and proxied records.
+- DNS records belong to a registered domain (`domain_dns_record`, FK cascade on domain delete) and are published by the PowerDNS client into that domain's own zone; without a reachable PowerDNS they stay saved with syncStatus `pending`/`failed`. A, AAAA and CNAME records also get a proxy route in Redis (`record:<fqdn>`, see `server/record-routes.ts`), refreshed on every record change and rebuilt at boot. Deleting or banning a domain deletes its PowerDNS zone and its proxy routes. At boot the backend re-creates zones and republishes stored names (warmup in `server/index.ts`).
 - Frontend API base URL comes from `import.meta.env.VITE_API_URL`, which deployment currently feeds from `BACKEND_URL` during the frontend image build.
 - `docker-compose.yaml` builds local backend/frontend images and tags them with the GHCR image names.
 - `setup.sh` writes deployment env vars into `~/.domainak/.env`.

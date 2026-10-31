@@ -5,11 +5,15 @@ import { deleteDomainRoute, redis } from "../db/redis";
 import {
   bannedDomainsTable,
   bannedIpsTable,
-  dnsRecordsTable,
+  domainDnsRecordsTable,
   domainTable,
   userTable,
 } from "../db/schema";
 import { adminMiddleware, jwtMiddleware } from "../middleware/auth";
+import {
+  deleteDomainRecordRow,
+  removeDomainDnsRecords,
+} from "./domain-records";
 
 export const adminRouter = new Hono<{ Variables: { user: any } }>();
 
@@ -212,6 +216,58 @@ adminRouter.get("/ips", async (c) => {
   });
 });
 
+// Get paginated DNS records across all domains (admin inventory)
+adminRouter.get("/dns-records", async (c) => {
+  const { page, pageSize, offset } = getPaginationParams(c);
+  const [{ total } = { total: 0 }] = await db
+    .select({ total: count() })
+    .from(domainDnsRecordsTable);
+  const records = await db
+    .select({
+      id: domainDnsRecordsTable.id,
+      name: domainDnsRecordsTable.name,
+      type: domainDnsRecordsTable.type,
+      value: domainDnsRecordsTable.value,
+      ttl: domainDnsRecordsTable.ttl,
+      syncStatus: domainDnsRecordsTable.syncStatus,
+      createdAt: domainDnsRecordsTable.createdAt,
+      domain: domainTable.subdomain,
+      user: {
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+        githubId: userTable.githubId,
+        isBanned: userTable.isBanned,
+      },
+    })
+    .from(domainDnsRecordsTable)
+    .leftJoin(
+      domainTable,
+      eq(domainDnsRecordsTable.domainId, domainTable.id),
+    )
+    .leftJoin(userTable, eq(domainDnsRecordsTable.userId, userTable.id))
+    .orderBy(desc(domainDnsRecordsTable.createdAt))
+    .limit(pageSize)
+    .offset(offset);
+
+  return c.json({
+    items: records,
+    pagination: buildPagination(Number(total), page, pageSize),
+  });
+});
+
+// Delete any DNS record (admin bypasses ownership). The name is
+// unpublished from PowerDNS and its proxy route refreshed first,
+// best-effort, so the record stops resolving and serving.
+adminRouter.delete("/dns-records/:id", async (c) => {
+  const id = Number.parseInt(c.req.param("id"), 10);
+  const deleted = await deleteDomainRecordRow(id);
+  if (!deleted) {
+    return c.json({ error: "DNS record not found" }, 404);
+  }
+  return c.json({ success: true });
+});
+
 // Delete a domain
 adminRouter.delete("/domains/:id", async (c) => {
   const id = parseInt(c.req.param("id"), 10);
@@ -221,6 +277,7 @@ adminRouter.delete("/domains/:id", async (c) => {
     .where(eq(domainTable.id, id));
   if (domain.length === 0)
     return c.json({ error: "Domain not found" }, 404);
+  await removeDomainDnsRecords(id);
   await db.delete(domainTable).where(eq(domainTable.id, id));
   const subdomain = domain[0]?.subdomain;
   if (subdomain) await deleteDomainRoute(subdomain);
@@ -240,6 +297,16 @@ adminRouter.post("/banned-domains", async (c) => {
   }
 
   try {
+    // The domain's PowerDNS zone is removed first; the
+    // domain row delete below then cascades to the record rows.
+    const banned = await db
+      .select({ id: domainTable.id })
+      .from(domainTable)
+      .where(eq(domainTable.subdomain, domain));
+    for (const row of banned) {
+      await removeDomainDnsRecords(row.id);
+    }
+
     await db.transaction(async (tx) => {
       await tx.insert(bannedDomainsTable).values({ domain, reason });
       await tx
@@ -323,56 +390,5 @@ adminRouter.delete("/ips/:id", async (c) => {
   }
 
   await db.delete(bannedIpsTable).where(eq(bannedIpsTable.id, id));
-  return c.json({ success: true });
-});
-
-// Get paginated DNS records across all users (admin view)
-adminRouter.get("/dns-records", async (c) => {
-  const { page, pageSize, offset } = getPaginationParams(c);
-  const [{ total } = { total: 0 }] = await db
-    .select({ total: count() })
-    .from(dnsRecordsTable);
-  const records = await db
-    .select({
-      id: dnsRecordsTable.id,
-      name: dnsRecordsTable.name,
-      type: dnsRecordsTable.type,
-      value: dnsRecordsTable.value,
-      ttl: dnsRecordsTable.ttl,
-      zone: dnsRecordsTable.zone,
-      recordMode: dnsRecordsTable.recordMode,
-      createdAt: dnsRecordsTable.createdAt,
-      user: {
-        id: userTable.id,
-        name: userTable.name,
-        email: userTable.email,
-        githubId: userTable.githubId,
-        isBanned: userTable.isBanned,
-      },
-    })
-    .from(dnsRecordsTable)
-    .leftJoin(userTable, eq(dnsRecordsTable.userId, userTable.id))
-    .orderBy(desc(dnsRecordsTable.createdAt))
-    .limit(pageSize)
-    .offset(offset);
-
-  return c.json({
-    items: records,
-    pagination: buildPagination(Number(total), page, pageSize),
-  });
-});
-
-// Delete any DNS record (admin bypasses ownership)
-adminRouter.delete("/dns-records/:id", async (c) => {
-  const id = Number.parseInt(c.req.param("id"), 10);
-  const found = await db
-    .select()
-    .from(dnsRecordsTable)
-    .where(eq(dnsRecordsTable.id, id));
-  const record = found[0];
-  if (!record) {
-    return c.json({ error: "DNS record not found" }, 404);
-  }
-  await db.delete(dnsRecordsTable).where(eq(dnsRecordsTable.id, id));
   return c.json({ success: true });
 });

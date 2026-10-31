@@ -29,6 +29,20 @@
       "when": 1793292543859,
       "tag": "0003_tense_krista_starr",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793371633578,
+      "tag": "0004_per-domain-dns-records",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793396425057,
+      "tag": "0005_drop-cloudflare-id",
+      "breakpoints": true
     }
   ]
 }

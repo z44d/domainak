@@ -1,10 +1,11 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { deleteDomainRoute, redis } from "server/db/redis";
 import { db } from "../db";
 import {
   bannedDomainsTable,
   bannedIpsTable,
+  domainDnsRecordsTable,
   domainTable,
 } from "../db/schema";
 import { jwtMiddleware } from "../middleware/auth";
@@ -14,6 +15,14 @@ import {
   publishDomainSettings,
   serviceWindowMeta,
 } from "../settings";
+import {
+  createDomainRecord,
+  deleteDomainRecord,
+  listDomainRecords,
+  removeDomainDnsRecords,
+  retryDomainRecord,
+  updateDomainRecord,
+} from "./domain-records";
 
 export const domainsRouter = new Hono<{ Variables: { user: any } }>();
 domainsRouter.use("*", jwtMiddleware);
@@ -146,23 +155,42 @@ domainsRouter.get("/available", async (c) => {
   return c.json({ available: availableDomains });
 });
 
-// Get user's domains
+// Get user's domains, each with its DNS record count so the list can
+// summarise the records section without a second request per domain.
 domainsRouter.get("/", async (c) => {
   const user = c.get("user");
   const domains = await db
     .select()
     .from(domainTable)
     .where(eq(domainTable.userId, user.id));
+  const counts = await db
+    .select({
+      domainId: domainDnsRecordsTable.domainId,
+      count: sql<number>`count(*)`,
+    })
+    .from(domainDnsRecordsTable)
+    .groupBy(domainDnsRecordsTable.domainId);
+  const countByDomain = new Map(
+    counts.map((row) => [row.domainId, Number(row.count)]),
+  );
 
   // The dashboard shows the local service window next to its GMT conversion,
   // so the offset is computed here instead of letting the client guess it.
   return c.json({
     domains: domains.map((row) => ({
       ...row,
+      recordCount: countByDomain.get(row.id) ?? 0,
       serviceWindow: serviceWindowMeta(row),
     })),
   });
 });
+
+// DNS records for one domain, managed from that domain's settings.
+domainsRouter.get("/:id/records", listDomainRecords);
+domainsRouter.post("/:id/records", createDomainRecord);
+domainsRouter.put("/:id/records/:recordId", updateDomainRecord);
+domainsRouter.delete("/:id/records/:recordId", deleteDomainRecord);
+domainsRouter.post("/:id/records/:recordId/retry", retryDomainRecord);
 
 // Add a new subdomain
 domainsRouter.post("/", async (c) => {
@@ -415,6 +443,9 @@ domainsRouter.delete("/:id", async (c) => {
   if (domain[0]?.userId !== user.id)
     return c.json({ error: "Forbidden" }, 403);
 
+  // The domain's PowerDNS zone is removed first; the
+  // domain row delete then cascades to the remaining record rows.
+  await removeDomainDnsRecords(id);
   await db.delete(domainTable).where(eq(domainTable.id, id));
   const subdomain = domain[0]?.subdomain;
   if (subdomain) await deleteDomainRoute(subdomain);

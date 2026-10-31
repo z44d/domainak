@@ -1,0 +1,1 @@
+ALTER TABLE "domain_dns_record" DROP COLUMN "cloudflare_id";

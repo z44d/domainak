@@ -29,9 +29,9 @@ export const openApiDoc: OpenAPIV3.Document = {
     { name: "Auth", description: "GitHub OAuth authentication" },
     { name: "Domains", description: "User domain management" },
     {
-      name: "Records",
+      name: "Domain Records",
       description:
-        "DNS records (A, AAAA, CNAME, TXT) in the delegated zone",
+        "DNS records for one registered domain, managed from its settings and published in the domain's own zone in the project's PowerDNS server",
     },
     { name: "Stats", description: "Domain visitor statistics" },
     { name: "Admin", description: "Admin-only moderation endpoints" },
@@ -455,14 +455,30 @@ export const openApiDoc: OpenAPIV3.Document = {
       },
     },
 
-    // ─── Records ────────────────────────────────────────
-    "/records": {
+    // ─── Domain records ────────────────────────────────
+    "/domains/{id}/records": {
       get: {
-        tags: ["Records"],
-        summary: "List user's DNS records",
+        tags: ["Domain Records"],
+        summary: "List a domain's DNS records",
         description:
-          "Returns every DNS record owned by the authenticated user plus the base domains that support record mode.",
+          "Returns every DNS record of the authenticated user's domain (admins may list any domain), plus whether DNS publishing is configured on the server.",
         security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+          {
+            name: "refreshDelegation",
+            in: "query",
+            required: false,
+            schema: { type: "string", enum: ["1"] },
+            description:
+              "Set to 1 to skip the cached delegation check and query public DNS again.",
+          },
+        ],
         responses: {
           "200": {
             description: "List of records",
@@ -471,21 +487,26 @@ export const openApiDoc: OpenAPIV3.Document = {
                 schema: {
                   type: "object",
                   properties: {
-                    domains: {
+                    domain: {
+                      type: "string",
+                      example: "myapp.domainak.com",
+                    },
+                    dnsConfigured: { type: "boolean" },
+                    nameservers: {
                       type: "array",
-                      description:
-                        "Base domains where records can be created, with their rc zone",
-                      items: {
-                        type: "object",
-                        properties: {
-                          domain: {
-                            type: "string",
-                            example: "domainak.qzz.io",
-                          },
-                          zone: {
-                            type: "string",
-                            example: "rc.domainak.qzz.io",
-                          },
+                      items: { type: "string" },
+                      example: ["ns1.example.com", "ns2.example.com"],
+                    },
+                    delegation: {
+                      type: "object",
+                      properties: {
+                        status: {
+                          type: "string",
+                          enum: ["delegated", "pending", "unknown"],
+                        },
+                        checkedAt: {
+                          type: "string",
+                          format: "date-time",
                         },
                       },
                     },
@@ -497,25 +518,40 @@ export const openApiDoc: OpenAPIV3.Document = {
                           id: { type: "integer" },
                           name: {
                             type: "string",
-                            example: "app.rc.domainak.qzz.io",
+                            example: "www.myapp.domainak.com",
                           },
                           type: {
                             type: "string",
-                            enum: ["A", "AAAA", "CNAME", "TXT"],
+                            enum: [
+                              "A",
+                              "AAAA",
+                              "CNAME",
+                              "TXT",
+                              "MX",
+                              "NS",
+                              "SRV",
+                              "CAA",
+                              "PTR",
+                              "DS",
+                              "HTTPS",
+                              "SVCB",
+                              "CERT",
+                              "SSHFP",
+                              "TLSA",
+                              "NAPTR",
+                            ],
                           },
                           value: {
                             type: "string",
                             example: "203.0.113.10",
                           },
                           ttl: { type: "integer", example: 300 },
-                          zone: {
+                          comment: { type: "string" },
+                          syncStatus: {
                             type: "string",
-                            example: "rc.domainak.qzz.io",
+                            enum: ["synced", "pending", "failed"],
                           },
-                          recordMode: {
-                            type: "string",
-                            enum: ["dns-only", "proxied"],
-                          },
+                          syncError: { type: "string" },
                           createdAt: {
                             type: "string",
                             format: "date-time",
@@ -529,65 +565,14 @@ export const openApiDoc: OpenAPIV3.Document = {
             },
           },
           "401": { description: "Unauthorized" },
+          "404": { description: "Domain not found" },
         },
       },
       post: {
-        tags: ["Records"],
-        summary: "Create a DNS record",
+        tags: ["Domain Records"],
+        summary: "Create a DNS record for a domain",
         description:
-          "Validates the record and publishes it to the PowerDNS zone of the chosen base domain. proxied mode also creates a proxied record in Cloudflare so the origin stays hidden.",
-        security: [{ BearerAuth: [] }],
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["base", "name", "type", "value"],
-                properties: {
-                  base: {
-                    type: "string",
-                    description:
-                      "Base domain that supports record mode (see GET /records)",
-                    example: "domainak.qzz.io",
-                  },
-                  name: {
-                    type: "string",
-                    description:
-                      "Name relative to the rc zone, @ for its apex, or a full name inside it",
-                    example: "app",
-                  },
-                  type: {
-                    type: "string",
-                    enum: ["A", "AAAA", "CNAME", "TXT"],
-                  },
-                  value: { type: "string", example: "203.0.113.10" },
-                  ttl: { type: "integer", example: 300 },
-                  mode: {
-                    type: "string",
-                    enum: ["dns-only", "proxied"],
-                    default: "dns-only",
-                    description:
-                      "dns-only answers with the real value; proxied hides the origin behind Cloudflare. TXT is dns-only only.",
-                  },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          "200": { description: "Record created" },
-          "400": { description: "Validation failed" },
-          "401": { description: "Unauthorized" },
-          "403": { description: "Domain or target is banned" },
-          "409": { description: "Record already exists" },
-        },
-      },
-    },
-    "/records/{id}": {
-      delete: {
-        tags: ["Records"],
-        summary: "Delete a DNS record",
+          "Validates the record, saves it, and publishes it in the domain's PowerDNS zone. When PowerDNS is not configured or errors, the record is still saved with syncStatus pending/failed and can be retried. Records only resolve publicly once the domain is delegated to the server's nameservers. A, AAAA and CNAME records also get a proxy route, so a request for the name that reaches this server serves the record's target.",
         security: [{ BearerAuth: [] }],
         parameters: [
           {
@@ -597,11 +582,164 @@ export const openApiDoc: OpenAPIV3.Document = {
             schema: { type: "integer" },
           },
         ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "type", "value"],
+                properties: {
+                  name: {
+                    type: "string",
+                    description:
+                      "Name relative to the domain, @ for the domain itself, or a full name inside it",
+                    example: "www",
+                  },
+                  type: {
+                    type: "string",
+                    enum: [
+                      "A",
+                      "AAAA",
+                      "CNAME",
+                      "TXT",
+                      "MX",
+                      "NS",
+                      "SRV",
+                      "CAA",
+                      "PTR",
+                      "DS",
+                      "HTTPS",
+                      "SVCB",
+                      "CERT",
+                      "SSHFP",
+                      "TLSA",
+                      "NAPTR",
+                    ],
+                  },
+                  value: {
+                    type: "string",
+                    example: "203.0.113.10",
+                    description:
+                      'Canonical record data, for example "10 mail.example.com" for MX',
+                  },
+                  ttl: { type: "integer", example: 300 },
+                  comment: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": { description: "Record created" },
+          "400": { description: "Validation failed" },
+          "401": { description: "Unauthorized" },
+          "403": { description: "Domain or target is banned" },
+          "404": { description: "Domain not found" },
+          "409": { description: "Record already exists" },
+        },
+      },
+    },
+    "/domains/{id}/records/{recordId}": {
+      put: {
+        tags: ["Domain Records"],
+        summary: "Update a DNS record",
+        description:
+          "Publishes the new values first, then saves them, so the stored row never describes values that failed to publish.",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+          {
+            name: "recordId",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name", "type", "value"],
+                properties: {
+                  name: { type: "string", example: "www" },
+                  type: { type: "string" },
+                  value: { type: "string" },
+                  ttl: { type: "integer", example: 300 },
+                  comment: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Record updated" },
+          "400": { description: "Validation failed" },
+          "401": { description: "Unauthorized" },
+          "404": { description: "Domain or record not found" },
+          "409": { description: "Record already exists" },
+          "503": { description: "DNS publishing is not configured" },
+        },
+      },
+      delete: {
+        tags: ["Domain Records"],
+        summary: "Delete a DNS record",
+        description:
+          "Rebuilds the record's owner name in PowerDNS without the record, then deletes the row.",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+          {
+            name: "recordId",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+        ],
         responses: {
           "200": { description: "Record deleted" },
           "401": { description: "Unauthorized" },
-          "403": { description: "Forbidden" },
-          "404": { description: "Record not found" },
+          "404": { description: "Domain or record not found" },
+        },
+      },
+    },
+    "/domains/{id}/records/{recordId}/retry": {
+      post: {
+        tags: ["Domain Records"],
+        summary: "Retry publishing a DNS record",
+        description:
+          "Republishes the stored values for a pending or failed record and updates its sync status.",
+        security: [{ BearerAuth: [] }],
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+          {
+            name: "recordId",
+            in: "path",
+            required: true,
+            schema: { type: "integer" },
+          },
+        ],
+        responses: {
+          "200": { description: "Record with updated sync status" },
+          "401": { description: "Unauthorized" },
+          "404": { description: "Domain or record not found" },
         },
       },
     },

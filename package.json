@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "lint": "biome check server --write --unsafe",
+    "test": "bun test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",

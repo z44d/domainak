@@ -9,6 +9,7 @@ Domainak is a GitHub-authenticated subdomain router with a React dashboard, a Ho
 - Track traffic totals, yearly, monthly, weekly, and daily visitors in Redis.
 - Manage the platform from an admin panel with paginated views for domains, users, banned users, banned domains, and blocked IPs.
 - Ban users, domains, and IPs without being limited to the latest 100 records.
+- Manage DNS records for each registered domain from its settings: A, AAAA, CNAME, TXT, MX, NS, SRV, CAA, PTR, DS, HTTPS, SVCB, CERT, SSHFP, TLSA and NAPTR, published in the domain's own authoritative zone on this server's PowerDNS nameserver — no outside DNS provider is involved.
 
 ## Stack
 
@@ -17,6 +18,7 @@ Domainak is a GitHub-authenticated subdomain router with a React dashboard, a Ho
 - Database: PostgreSQL
 - Cache and routing store: Redis
 - Edge proxy: OpenResty / Nginx with Lua
+- DNS: PowerDNS authoritative server, one zone per registered domain
 - Tunnel: Cloudflare Tunnel via `cloudflared`
 
 ## Repository layout
@@ -242,8 +244,67 @@ docker compose logs cloudflared --tail=100
 
 Visit your `WEBSITE_URL`, sign in with GitHub, and verify your GitHub user ID is in `ADMIN_IDS` if you need admin access.
 
+## DNS records
+
+Open any domain in the dashboard and use **Records**. A record's name is
+relative to the domain: `@` is the domain itself (`app.example.com`),
+`www` is `www.app.example.com`, and `_acme-challenge` is the ACME
+challenge name under it. Records are published in the domain's own
+authoritative zone in this server's PowerDNS nameserver, so there are
+no outside DNS limits: record counts are unlimited and no outside
+DNS provider is involved in publishing.
+
+- Supported types: A, AAAA, CNAME, TXT, MX, NS, SRV, CAA, PTR, DS,
+  HTTPS, SVCB, CERT, SSHFP, TLSA, NAPTR. CNAME exclusivity is enforced
+  (a CNAME cannot share its name with other records). NS records
+  cannot be set at the domain apex, where the zone's own nameservers
+  live.
+- Each record shows its publish status: **Published**, **Not published**
+  or **Publish failed**, with the error and a Retry button. Records are
+  always saved in Postgres first, so a PowerDNS outage never loses a
+  record. At startup the backend re-creates every zone and republishes
+  every stored name, so PowerDNS and Postgres cannot drift apart.
+- A, AAAA and CNAME records also route through the proxy: when a
+  request for a record's name reaches this server (for example
+  through the base domains' wildcard, which points at the tunnel),
+  the proxy serves the record's target instead of the "subdomain
+  isn't claimed yet" page. CNAME targets are proxied over HTTPS with
+  the record's hostname as the Host header, exactly as a real CNAME
+  resolution behaves, and TLS terminates at the tunnel edge as for
+  registered routes, so record hostnames served through the tunnel
+  keep working over HTTPS. A registered domain route always takes
+  precedence over a record route for the same name. Other record
+  types are DNS-only: they resolve through PowerDNS once delegated,
+  but create no proxy route.
+- For records to resolve on the public internet, the domain must be
+  delegated to this server's nameservers (by default `ns1`/`ns2` under
+  your first base domain, overridable with `DNS_NAMESERVERS`). Add NS
+  records for the domain in its parent zone pointing at those
+  nameservers, and A (glue) records for the nameservers pointing at
+  this server's public IP. The Records panel shows the exact NS
+  records to add and whether delegation is live. Until delegation is
+  in place, records publish to PowerDNS but do not resolve publicly.
+  Delegating a domain also moves its apex DNS to PowerDNS: if the
+  domain's website should keep routing through the tunnel, add an
+  apex record for it in the panel (for example a CNAME to your tunnel
+  hostname) — the apex record is what the domain resolves to in DNS
+  once delegated. HTTP traffic through the proxy still follows the
+  domain's registered route, which takes precedence over record
+  routes for the same name.
+- Deleting a domain (or banning it) removes its whole PowerDNS zone
+  as well.
+
+> The previous standalone records system (the `rc.<domain>` PowerDNS
+> zones and the standalone records API) was removed. The Records tab
+> is now an inventory of the per-domain records. Existing `*.rc.*`
+> records stop resolving after this change; recreate them under the
+> relevant domain's Records section. Records published by the earlier
+> Cloudflare-based version are not removed automatically — delete
+> them in the base domain's zone if you deployed that version.
+
 ## Ports
 
+- `53` (UDP/TCP) -> PowerDNS authoritative nameserver
 - `2006` -> OpenResty
 - `2007` -> backend API
 - `5173` -> frontend container
@@ -337,6 +398,16 @@ docker compose down
 
 - Your GitHub user ID is probably missing from `ADMIN_IDS`
 - Fetch your ID with `curl -s https://api.github.com/users/<username>`
+
+### DNS records do not resolve
+
+- Check the delegation status in the domain's Records panel: the
+  domain needs NS records in its parent zone pointing at this
+  server's nameservers, and the nameservers need A (glue) records
+  pointing at the server's public IP.
+- Confirm UDP/TCP port 53 is open to the internet on the server.
+- Check `docker compose logs pdns --tail=200` and the record's
+  publish status in the panel.
 
 ### Subdomains do not resolve
 

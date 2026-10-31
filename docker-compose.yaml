@@ -60,17 +60,18 @@ services:
       - POSTGRES_URL=${POSTGRES_URL}
       - REDIS_URL=redis://redis:6379
       - DOMAINS=${DOMAINS:-domainak.com}
-      - RECORDS_ZONE=${RECORDS_ZONE:-records.domainak.qzz.io}
-      - PDNS_API_URL=${PDNS_API_URL:-http://pdns:8081}
-      - PDNS_API_KEY=${PDNS_API_KEY:-domainak-pdns-internal}
       - JWT_SECRET=${JWT_SECRET}
       - WEBSITE_URL=${WEBSITE_URL:-http://localhost:5173}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - ADMIN_IDS=${ADMIN_IDS}
-      # DNS records: rc.<base> NS delegations + proxied records in Cloudflare
-      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
-      - RECORD_DOMAIN_EXCLUDES=${RECORD_DOMAIN_EXCLUDES:-z44d.com}
+      # DNS records: published in this server's own PowerDNS zones
+      # (one zone per registered domain). No outside DNS provider
+      # is involved. DNS_NAMESERVERS is optional: it defaults to
+      # ns1/ns2 under the first base domain in DOMAINS.
+      - PDNS_API_URL=${PDNS_API_URL:-http://pdns:8081}
+      - PDNS_API_KEY=${PDNS_API_KEY:-domainak-pdns-internal}
+      - DNS_NAMESERVERS=${DNS_NAMESERVERS:-}
       - NODE_ENV=production
       - PORT=2007
     restart: unless-stopped

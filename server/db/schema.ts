@@ -104,39 +104,53 @@ export const bannedIpsTable = pgTable(
   (table) => [index("banned_ips_created_at_idx").on(table.createdAt)],
 );
 
-// One row per DNS record, served by the delegated PowerDNS zone of the
-// row's `zone` column (for example rc.domainak.qzz.io, or the legacy
-// records.domainak.qzz.io). The row is the source of truth: every change
-// rebuilds the affected rrset in PowerDNS, and proxied rows are mirrored
-// into Cloudflare through the API (see routes/records.ts and cloudflare.ts).
-export const dnsRecordsTable = pgTable(
-  "dns_record",
+// DNS records that belong to one registered domain. A record's owner
+// name lives under the domain itself: for the domain
+// `app.example.com`, "@" is app.example.com, "www" is
+// www.app.example.com and "_acme-challenge" is the ACME challenge
+// name. Records are published in the domain's own zone in the
+// project's PowerDNS server (see routes/domain-records.ts); Postgres
+// is the source of truth and `syncStatus` reports whether the
+// published copy matches the row. Deleting the domain deletes its
+// records.
+export const domainDnsRecordsTable = pgTable(
+  "domain_dns_record",
   {
     id: serial("id").primaryKey(),
+    domainId: integer("domain_id")
+      .notNull()
+      .references(() => domainTable.id, {
+        onDelete: "cascade",
+      }),
     userId: integer("user_id")
       .notNull()
       .references(() => userTable.id),
     // Fully qualified owner name without a trailing dot, e.g.
-    // "tgram.rc.domainak.qzz.io".
+    // "www.app.example.com".
     name: varchar("name", { length: 253 }).notNull(),
-    type: varchar("type", { length: 5 }).notNull(),
+    type: varchar("type", { length: 10 }).notNull(),
+    // Canonical record data, e.g. "10 mail.example.com" for MX.
     value: text("value").notNull(),
     ttl: integer("ttl").default(300).notNull(),
-    // PowerDNS zone that answers this record, e.g. "rc.domainak.qzz.io".
-    zone: varchar("zone", { length: 253 }).default("").notNull(),
-    // "dns-only" answers with the real value straight from PowerDNS;
-    // "proxied" hides the origin behind Cloudflare: the PowerDNS answer
-    // becomes a CNAME to the proxy carrier and a proxied record with the
-    // real value is kept in the Cloudflare zone.
-    recordMode: varchar("record_mode", { length: 16 })
-      .default("dns-only")
+    comment: varchar("comment", { length: 255 }),
+    // "synced" (published copy matches), "pending" (never published,
+    // for example PowerDNS not configured), "failed" (the
+    // last publish attempt errored; see syncError).
+    syncStatus: varchar("sync_status", { length: 16 })
+      .default("pending")
       .notNull(),
+    syncError: text("sync_error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
   },
   (table) => [
-    index("dns_record_user_id_idx").on(table.userId),
-    index("dns_record_zone_idx").on(table.zone),
-    uniqueIndex("dns_record_name_type_value_idx").on(
+    index("domain_dns_record_domain_id_idx").on(table.domainId),
+    index("domain_dns_record_name_idx").on(table.name),
+    uniqueIndex("domain_dns_record_unique_idx").on(
+      table.domainId,
       table.name,
       table.type,
       table.value,

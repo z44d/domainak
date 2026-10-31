@@ -42,11 +42,12 @@ import { AppShell } from "../components/AppShell";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LoadingScreen } from "../components/LoadingScreen";
 import { ApiError, api } from "../lib/api";
+import { TYPE_COLOR } from "../lib/dns-records";
 import type {
+  AdminDnsRecordRow,
   AdminUserRow,
   BannedDomain,
   BannedIp,
-  DnsRecord,
   Domain,
   PaginatedResponse,
   PaginationMeta,
@@ -63,7 +64,12 @@ type AdminView =
   | "banned-ips"
   | "dns-records";
 
-type AdminItem = Domain | AdminUserRow | BannedDomain | BannedIp;
+type AdminItem =
+  | Domain
+  | AdminUserRow
+  | BannedDomain
+  | BannedIp
+  | AdminDnsRecordRow;
 
 interface Feedback {
   message: string;
@@ -147,7 +153,7 @@ const viewMeta: Record<
     title: "DNS Records",
     eyebrow: "Records inventory",
     description:
-      "Review every DNS record across all zones, see who owns it, and remove records that should no longer resolve.",
+      "Review every DNS record across all domains, see who owns it, and remove records that should no longer resolve or route.",
     emptyTitle: "No DNS records yet",
     emptyCopy: "Records created from the dashboard will appear here.",
     endpoint: "/admin/dns-records",
@@ -511,7 +517,7 @@ export default function Admin() {
       setConfirmRequest({
         title: "Remove DNS record?",
         message:
-          "Remove this record from all zones? It will stop resolving immediately.",
+          "Remove this record? It will stop resolving and stop routing through the proxy immediately.",
         confirmLabel: "Remove",
         action: async () => {
           await runAction(`dns-record-delete-${id}`, async () => {
@@ -716,7 +722,7 @@ export default function Admin() {
           />
         ) : activeView === "dns-records" ? (
           <DnsRecordsTable
-            records={rows as unknown as DnsRecord[]}
+            records={rows as AdminDnsRecordRow[]}
             pendingActionKey={pendingActionKey}
             onDeleteDnsRecord={handleDeleteDnsRecord}
           />
@@ -1400,14 +1406,22 @@ function DnsRecordsTable({
   pendingActionKey,
   onDeleteDnsRecord,
 }: {
-  records: DnsRecord[];
+  records: AdminDnsRecordRow[];
   pendingActionKey: string | null;
   onDeleteDnsRecord: (id: number) => void;
 }) {
   return (
     <TableContainer sx={{ overflowX: "auto" }}>
       <Table sx={{ minWidth: 720 }}>
-        <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+        <caption
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+          }}
+        >
           DNS records and moderation actions.
         </caption>
         <TableHead>
@@ -1415,8 +1429,8 @@ function DnsRecordsTable({
             <TableCell>Record</TableCell>
             <TableCell>Type</TableCell>
             <TableCell>Value</TableCell>
-            <TableCell>Zone</TableCell>
-            <TableCell>Mode</TableCell>
+            <TableCell>Domain</TableCell>
+            <TableCell>Status</TableCell>
             <TableCell>User</TableCell>
             <TableCell>Created</TableCell>
             <TableCell>Actions</TableCell>
@@ -1424,7 +1438,6 @@ function DnsRecordsTable({
         </TableHead>
         <TableBody>
           {records.map((record) => {
-            const userId = record.user?.id;
             const isUserBanned = record.user?.isBanned ?? false;
 
             return (
@@ -1447,6 +1460,7 @@ function DnsRecordsTable({
                     size="small"
                     variant="filled"
                     label={record.type}
+                    color={TYPE_COLOR[record.type]}
                     sx={{ fontFamily: FONT_MONO }}
                   />
                 </TableCell>
@@ -1471,14 +1485,26 @@ function DnsRecordsTable({
                     overflowWrap: "anywhere",
                   }}
                 >
-                  {record.zone}
+                  {record.domain ?? "-"}
                 </TableCell>
                 <TableCell>
                   <Chip
                     size="small"
                     variant="outlined"
-                    label={record.recordMode}
-                    color={record.recordMode === "proxied" ? "warning" : "default"}
+                    label={
+                      record.syncStatus === "synced"
+                        ? "Published"
+                        : record.syncStatus === "failed"
+                          ? "Publish failed"
+                          : "Not published"
+                    }
+                    color={
+                      record.syncStatus === "synced"
+                        ? "success"
+                        : record.syncStatus === "failed"
+                          ? "error"
+                          : "warning"
+                    }
                     sx={{ fontFamily: FONT_MONO }}
                   />
                 </TableCell>
@@ -1521,32 +1547,9 @@ function DnsRecordsTable({
                   >
                     <ActionButton
                       pending={
-                        userId != null &&
-                        pendingActionKey === `user-${userId}`
-                      }
-                      color={isUserBanned ? "success" : "error"}
-                      startIcon={
-                        isUserBanned ? (
-                          <CheckCircleRounded fontSize="small" />
-                        ) : (
-                          <BlockRounded fontSize="small" />
-                        )
-                      }
-                      disabled={userId == null}
-                      onClick={() => {
-                        if (userId != null) {
-                          // User banning is handled in the users views.
-                        }
-                      }}
-                    >
-                      {isUserBanned ? "Unban user" : "Ban user"}
-                    </ActionButton>
-
-                    <ActionButton
-                      pending={
                         pendingActionKey === `dns-record-delete-${record.id}`
                       }
-                      variant="text"
+                      color="error"
                       startIcon={
                         <DeleteOutlineRounded fontSize="small" />
                       }

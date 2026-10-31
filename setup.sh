@@ -7,6 +7,7 @@ INSTALL_DIR="${HOME}/.domainak"
 ENV_FILE="${INSTALL_DIR}/.env"
 COMPOSE_FILE="${INSTALL_DIR}/docker-compose.yaml"
 NGINX_FILE="${INSTALL_DIR}/nginx.conf"
+PDNS_FILE="${INSTALL_DIR}/pdns.conf"
 LUA_FILE="${INSTALL_DIR}/unregistered.lua"
 REPO_OWNER="${DOMAINAK_REPO_OWNER:-z44d}"
 REPO_NAME="${DOMAINAK_REPO_NAME:-domainak}"
@@ -132,8 +133,8 @@ load_existing_env() {
       GITHUB_CLIENT_SECRET) GITHUB_CLIENT_SECRET_DEFAULT="$value" ;;
       ADMIN_IDS) ADMIN_IDS_DEFAULT="$value" ;;
       JWT_SECRET) JWT_SECRET_DEFAULT="$value" ;;
-      CLOUDFLARE_API_TOKEN) CLOUDFLARE_API_TOKEN_DEFAULT="$value" ;;
-      RECORD_DOMAIN_EXCLUDES) RECORD_DOMAIN_EXCLUDES_DEFAULT="$value" ;;
+      PDNS_API_KEY) PDNS_API_KEY_DEFAULT="$value" ;;
+      DNS_NAMESERVERS) DNS_NAMESERVERS_DEFAULT="$value" ;;
       GHCR_REGISTRY) GHCR_REGISTRY_DEFAULT="$value" ;;
       GHCR_OWNER) GHCR_OWNER_DEFAULT="$value" ;;
     esac
@@ -236,8 +237,8 @@ $(write_env_line GITHUB_CLIENT_ID "$GITHUB_CLIENT_ID")
 $(write_env_line GITHUB_CLIENT_SECRET "$GITHUB_CLIENT_SECRET")
 $(write_env_line ADMIN_IDS "$ADMIN_IDS")
 $(write_env_line JWT_SECRET "$JWT_SECRET")
-$(write_env_line CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN")
-$(write_env_line RECORD_DOMAIN_EXCLUDES "$RECORD_DOMAIN_EXCLUDES")
+$(write_env_line PDNS_API_KEY "$PDNS_API_KEY")
+$(write_env_line DNS_NAMESERVERS "$DNS_NAMESERVERS")
 EOF
 }
 
@@ -245,6 +246,7 @@ download_stack_files() {
   print_step "Downloading deployment files"
   download_file "${RAW_BASE_URL}/docker-compose.yaml" "$COMPOSE_FILE"
   download_file "${RAW_BASE_URL}/nginx.conf" "$NGINX_FILE"
+  download_file "${RAW_BASE_URL}/pdns.conf" "$PDNS_FILE"
   download_file "${RAW_BASE_URL}/unregistered.lua" "$LUA_FILE"
   print_success "Deployment files downloaded into ${INSTALL_DIR}"
 }
@@ -336,8 +338,8 @@ main() {
   prompt_value GITHUB_CLIENT_SECRET "GitHub OAuth Client Secret" "${GITHUB_CLIENT_SECRET_DEFAULT:-}" true true "Required. Hidden while you type."
   prompt_value ADMIN_IDS "Admin GitHub User IDs" "${ADMIN_IDS_DEFAULT:-}" false false "Optional. Comma-separated GitHub numeric user IDs with admin access."
   prompt_value JWT_SECRET "JWT Secret" "${JWT_SECRET_DEFAULT:-}" true true "Required. Use a long random secret. Hidden while you type."
-  prompt_value CLOUDFLARE_API_TOKEN "Cloudflare API Token" "${CLOUDFLARE_API_TOKEN_DEFAULT:-}" false true "Optional. A token with Zone:DNS:Edit permission. Needed for rc.<domain> NS delegations and proxied DNS records. Hidden while you type."
-  prompt_value RECORD_DOMAIN_EXCLUDES "Record-mode Excluded Domains" "${RECORD_DOMAIN_EXCLUDES_DEFAULT:-z44d.com}" false false "Optional. Space or comma-separated base domains that must NOT serve DNS records. Defaults to z44d.com."
+  prompt_value PDNS_API_KEY "PowerDNS API Key" "${PDNS_API_KEY_DEFAULT:-}" false true "Optional. Shared secret between the backend and the PowerDNS container. Leave empty to use the built-in default. Hidden while you type."
+  prompt_value DNS_NAMESERVERS "DNS Nameservers" "${DNS_NAMESERVERS_DEFAULT:-}" false false "Optional. Comma-separated nameservers for the project's own DNS zones, for example: ns1.example.com,ns2.example.com. Defaults to ns1/ns2 under your first allowed domain. Each domain must be delegated to these nameservers, and they need A (glue) records pointing at this server's public IP."
 
   write_env_file
   print_success "Environment file saved to ${ENV_FILE}"
